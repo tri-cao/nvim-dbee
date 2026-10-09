@@ -4,16 +4,27 @@ local M = {}
 ---@param tree NuiTree tree to apply the expansion map to
 ---@param expansion table<string, boolean> expansion map ( id:is_expanded mapping )
 function M.set(tree, expansion)
-  -- first pass: load lazy_loaded children
+  -- Load parents before their lazy descendants, regardless of pairs() order.
+  local pending = {}
   for id, t in pairs(expansion) do
     if t then
+      pending[id] = true
+    end
+  end
+  while next(pending) do
+    local loaded = false
+    for id in pairs(pending) do
       local node = tree:get_node(id) --[[@as DrawerUINode]]
       if node then
-        -- if function for getting layout exist, call it
         if type(node.lazy_children) == "function" then
           tree:set_nodes(node.lazy_children(), node.id)
         end
+        pending[id] = nil
+        loaded = true
       end
+    end
+    if not loaded then
+      break
     end
   end
 

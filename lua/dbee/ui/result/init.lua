@@ -85,13 +85,18 @@ function ResultUI:on_call_state_changed(data)
   self.current_call = call
 
   -- perform action based on the state
-  if call.state == "executing" then
+  if call.state == "executing" or call.state == "retrieving" then
     self.stop_progress()
     self:display_progress()
-  elseif call.state == "retrieving" then
+  elseif call.state == "archived" or call.state == "archive_failed" then
     self.stop_progress()
     self:page_current()
-  elseif call.state == "executing_failed" or call.state == "retrieving_failed" or call.state == "canceled" then
+  elseif
+    call.state == "executing_failed"
+    or call.state == "retrieving_failed"
+    or call.state == "canceled"
+    or call.state == "overwritten"
+  then
     self.stop_progress()
     self:display_status()
   else
@@ -152,6 +157,8 @@ function ResultUI:display_status()
     msg = "Failed retrieving results"
   elseif state == "canceled" then
     msg = "Call canceled"
+  elseif state == "overwritten" then
+    msg = "Result cache was replaced by a newer query"
   end
 
   local seconds = self.current_call.time_taken_us / 1000000
@@ -184,6 +191,18 @@ end
 function ResultUI:display_result(page)
   if not self.current_call then
     error("no call set to result")
+  end
+  -- Never make a synchronous result RPC while the backend is still draining
+  -- the query into its temporary cache, including manual page navigation.
+  local state = self.current_call.state
+  if state == "executing" or state == "retrieving" then
+    self.stop_progress()
+    self:display_progress()
+    return self.page_index
+  elseif state == "executing_failed" or state == "retrieving_failed" or state == "canceled" or state == "overwritten" then
+    self.stop_progress()
+    self:display_status()
+    return self.page_index
   end
   -- calculate the ranges
   if page < 0 then

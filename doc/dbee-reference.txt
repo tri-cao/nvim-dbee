@@ -41,6 +41,17 @@ dbee.is_open()                                                    *dbee.is_open*
         (boolean)
 
 
+dbee.refresh_metadata({id?})                              *dbee.refresh_metadata*
+    Fetch a new table and column metadata snapshot and redraw the drawer.
+    The previous snapshot is preserved if the refresh fails.
+
+    Parameters: ~
+        {id} (nil|connection_id) Defaults to the active connection.
+
+    Snapshots are stored in stdpath("state") .. "/dbee/metadata.sqlite3".
+    Press R on a connection or its descendants to refresh from the drawer.
+
+
 dbee.execute({query})                                             *dbee.execute*
     Execute a query on current connection.
     Convenience wrapper around some api functions that executes a query on
@@ -219,6 +230,7 @@ call_state                                                          *call_state*
         ("archived")
         ("archive_failed")
         ("canceled")
+        ("overwritten")
 
 
 CallDetails                                                        *CallDetails*

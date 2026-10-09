@@ -185,7 +185,7 @@ function CallLogUI:get_actions()
         return
       end
 
-      if call.state == "archived" or call.state == "retrieving" then
+      if call.state == "archived" or call.state == "retrieving" or call.state == "overwritten" then
         self.result:set_call(call)
         self.result:page_current()
       end

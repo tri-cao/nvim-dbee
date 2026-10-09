@@ -128,6 +128,21 @@ function core.connection_get_structure(id)
   return state.handler():connection_get_structure(id)
 end
 
+---Refresh the persistent table and column metadata snapshot for a connection.
+---The previous snapshot remains available if the refresh fails.
+---@param id? connection_id defaults to the active connection
+---@return DBStructure[]
+function core.connection_refresh_metadata(id)
+  if not id then
+    local conn = core.get_current_connection()
+    if not conn then
+      error("no connection currently selected")
+    end
+    id = conn.id
+  end
+  return state.handler():connection_refresh_metadata(id)
+end
+
 ---Get columns of a table
 ---@param id connection_id
 ---@param opts { table: string, schema: string, materialization: string }

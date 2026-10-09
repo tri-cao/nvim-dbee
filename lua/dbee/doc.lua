@@ -47,6 +47,7 @@
 ---| '"archived"'
 ---| '"archive_failed"'
 ---| '"canceled"'
+---| '"overwritten"'
 
 ---Details and stats of a single call to database.
 ---@class CallDetails

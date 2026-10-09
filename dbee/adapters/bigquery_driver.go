@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"reflect"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 	"cloud.google.com/go/bigquery"
 	"github.com/kndndrj/nvim-dbee/dbee/core"
 	"github.com/kndndrj/nvim-dbee/dbee/core/builders"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 )
 
@@ -22,6 +24,8 @@ type bigQueryDriver struct {
 	c *bigquery.Client
 	bigquery.QueryConfig
 }
+
+func (d *bigQueryDriver) ProjectID() string { return d.c.Project() }
 
 func (d *bigQueryDriver) Query(ctx context.Context, queryStr string) (core.ResultStream, error) {
 	query := d.c.Query(queryStr)
@@ -90,6 +94,7 @@ func (d *bigQueryDriver) Structure() (layouts []*core.Structure, err error) {
 	ctx := context.Background()
 
 	datasetsIter := d.c.Datasets(ctx)
+datasets:
 	for {
 		dataset, err := datasetsIter.Next()
 		if err != nil {
@@ -111,6 +116,12 @@ func (d *bigQueryDriver) Structure() (layouts []*core.Structure, err error) {
 		for {
 			table, err := tablesIter.Next()
 			if err != nil {
+				// A listed dataset may disappear or link to a missing source.
+				// Keep browsing the remaining datasets in that case.
+				var apiErr *googleapi.Error
+				if errors.As(err, &apiErr) && apiErr.Code == http.StatusNotFound {
+					continue datasets
+				}
 				if !errors.Is(err, iterator.Done) {
 					return nil, err
 				}

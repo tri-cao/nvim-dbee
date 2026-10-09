@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/neovim/go-client/nvim"
@@ -14,6 +16,7 @@ import (
 	"github.com/kndndrj/nvim-dbee/dbee/adapters"
 	"github.com/kndndrj/nvim-dbee/dbee/core"
 	"github.com/kndndrj/nvim-dbee/dbee/core/format"
+	"github.com/kndndrj/nvim-dbee/dbee/metadata"
 	"github.com/kndndrj/nvim-dbee/dbee/plugin"
 )
 
@@ -29,6 +32,8 @@ type Handler struct {
 	lookupConnectionCall map[core.ConnectionID][]core.CallID
 
 	currentConnectionID core.ConnectionID
+	metadataCache       *metadata.Cache
+	metadataMu          sync.Mutex
 }
 
 func New(vim *nvim.Nvim, logger *plugin.Logger) *Handler {
@@ -74,6 +79,9 @@ func (h *Handler) Close() {
 	// close connections
 	for _, c := range h.lookupConnection {
 		c.Close()
+	}
+	if h.metadataCache != nil {
+		h.metadataCache.Close()
 	}
 }
 
@@ -219,12 +227,12 @@ func (h *Handler) ConnectionGetStructure(connID core.ConnectionID) ([]*core.Stru
 		return nil, fmt.Errorf("unknown connection with id: %q", connID)
 	}
 
-	layout, err := c.GetStructure()
+	snapshot, err := h.connectionMetadata(c, false)
 	if err != nil {
-		return nil, fmt.Errorf("c.GetStructure: %w", err)
+		return nil, fmt.Errorf("connection metadata: %w", err)
 	}
 
-	return layout, nil
+	return snapshot.Structure, nil
 }
 
 func (h *Handler) ConnectionGetColumns(connID core.ConnectionID, opts *core.TableOptions) ([]*core.Column, error) {
@@ -233,12 +241,48 @@ func (h *Handler) ConnectionGetColumns(connID core.ConnectionID, opts *core.Tabl
 		return nil, fmt.Errorf("unknown connection with id: %q", connID)
 	}
 
-	columns, err := c.GetColumns(opts)
+	if opts == nil {
+		return nil, errors.New("opts cannot be nil")
+	}
+	snapshot, err := h.connectionMetadata(c, false)
 	if err != nil {
 		return nil, err
 	}
 
+	columns, ok := snapshot.Columns[core.ColumnKey(opts)]
+	if !ok {
+		return nil, fmt.Errorf("table %s.%s is absent from cached metadata; refresh the connection metadata", opts.Schema, opts.Table)
+	}
 	return columns, nil
+}
+
+func (h *Handler) connectionMetadata(c *core.Connection, refresh bool) (*core.Metadata, error) {
+	h.metadataMu.Lock()
+	defer h.metadataMu.Unlock()
+	if h.metadataCache == nil {
+		var stateDir string
+		if err := h.vim.Call("stdpath", &stateDir, "state"); err != nil {
+			return nil, err
+		}
+		cache, err := metadata.Open(filepath.Join(stateDir, "dbee", "metadata.sqlite3"))
+		if err != nil {
+			return nil, fmt.Errorf("open metadata cache: %w", err)
+		}
+		h.metadataCache = cache
+	}
+	return h.metadataCache.Get(c.MetadataCacheKey(), refresh, c.GetMetadata)
+}
+
+func (h *Handler) ConnectionRefreshMetadata(connID core.ConnectionID) ([]*core.Structure, error) {
+	c, ok := h.lookupConnection[connID]
+	if !ok {
+		return nil, fmt.Errorf("unknown connection with id: %q", connID)
+	}
+	snapshot, err := h.connectionMetadata(c, true)
+	if err != nil {
+		return nil, fmt.Errorf("refresh metadata: %w", err)
+	}
+	return snapshot.Structure, nil
 }
 
 func (h *Handler) ConnectionListDatabases(connID core.ConnectionID) (current string, available []string, err error) {
@@ -294,7 +338,7 @@ func (h *Handler) CallDisplayResult(callID core.CallID, buffer nvim.Buffer, from
 		return 0, fmt.Errorf("call.GetResult: %w", err)
 	}
 
-	text, err := res.Format(newTable(), from, to)
+	text, err := res.Format(newDisplayTable(h.vim), from, to)
 	if err != nil {
 		return 0, fmt.Errorf("res.Format: %w", err)
 	}

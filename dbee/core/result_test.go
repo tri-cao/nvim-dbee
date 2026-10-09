@@ -90,6 +90,7 @@ func TestResult(t *testing.T) {
 	}
 
 	result := new(core.Result)
+	t.Cleanup(result.Wipe)
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {

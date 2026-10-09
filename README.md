@@ -210,7 +210,7 @@ Here are a few steps to quickly get started:
 
   - All nodes:
 
-    - Press `o` to toggle the tree node.
+    - Press `<CR>` to toggle grouping nodes.
     - Press `r` to manually refresh the tree.
 
   - Connections:
@@ -218,8 +218,10 @@ Here are a few steps to quickly get started:
     - Press `cw` to edit the connection
     - Press `dd` to delete it (if source supports saving, it's also removed from there - see more
       below.)
-    - Press `<CR>` to perform an action - view history or look at helper queries. Pressing `<CR>`
-      directly on the connection node will set it as the active one
+    - Press `<CR>` on a connection to activate it and expand / collapse it; on a dataset, schema,
+      or database group to expand / collapse it; on a table or view to run its `List` query directly.
+    - Press `o` on a connection or any dataset, database, table, or column inside it to open that
+      connection's `scratchpad.sql` and focus the editor. The scratchpad is created once and reused.
 
   - Scratchpads:
 
@@ -243,8 +245,15 @@ Here are a few steps to quickly get started:
     active connection.
   - If you press `BB` in normal mode, you run the whole scratchpad on the active connection.
 
-- If the request was successful, the results should appear in the "result" buffer (bottom right by
-  default). If the total number of results was lower than the `page_size` parameter in config (100
+- Results are first saved to a temporary disk cache while the result buffer shows a loading
+  indicator. Once retrieval finishes, the "result" buffer (bottom right by default) reads only
+  the chunks needed for the current page. Values longer than 50 characters show their first
+  50 characters followed by `...`; copying and exporting still use the full values.
+  Tabs and line breaks appear as `\t` and `\n` in the preview to keep columns aligned.
+  Each connection uses one result file in `/tmp/dbee-results/`; a new query overwrites that file,
+  so older query results become unavailable. The schema/table/column metadata cache stays separate
+  in `metadata.sqlite3` and is unaffected by query execution.
+  If the total number of results was lower than the `page_size` parameter in config (100
   by default), all results should already be present. If there are more than `page_size` results,
   you can "page" through them using one of the following:
 
@@ -346,6 +355,29 @@ Another option is to use "edit" item in the tree and just edit the source manual
 
 If you aren't satisfied with the default capabilities, you can implement your own source. You just
 need to fill the `Source` interface and pass it to config at setup (`:h dbee.sources`).
+
+#### Metadata cache
+
+Opening a connection for the first time fetches its tables, views, and columns and stores a complete
+snapshot in `stdpath("state") .. "/dbee/metadata.sqlite3"`. All connections share this one file;
+snapshots are compressed MessagePack blobs indexed by connection and selected database. Later opens,
+including after restarting Neovim, reuse the snapshot without fetching table or column metadata.
+
+The first fetch can take longer for large databases because it collects all column schemas. BigQuery
+uses the table metadata API rather than executing a SQL query per table. The cache has no automatic
+expiry.
+
+Press `R` on a connection or any table/column beneath it to fetch a new snapshot. `r` only redraws the
+drawer using cached data. You can also refresh the active connection from Lua:
+
+```lua
+require("dbee").refresh_metadata()
+-- Or refresh a specific connection:
+require("dbee").refresh_metadata("connection-id")
+```
+
+A failed refresh preserves the previous snapshot. Editing the connection URL or switching databases
+uses a separate snapshot; renaming a connection does not discard its cache.
 
 #### Secrets
 

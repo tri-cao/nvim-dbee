@@ -57,24 +57,15 @@ local function connection_nodes(handler, conn, result)
       if struct.type == "table" or struct.type == "view" then
         local table_opts = { table = struct.name, schema = struct.schema, materialization = struct.type }
 
-        -- table helpers
-        node.action_1 = function(cb, select)
+        -- Execute the default table query directly.
+        node.action_1 = function(cb)
           local helpers = handler:connection_get_helpers(conn.id, table_opts)
-          local items = vim.tbl_keys(helpers)
-          table.sort(items)
-
-          select {
-            title = "Select a Query",
-            items = items,
-            on_confirm = function(selection)
-              local call = handler:connection_execute(conn.id, helpers[selection])
-              result:set_call(call)
-              cb()
-            end,
-            on_yank = function(selection)
-              vim.fn.setreg(vim.v.register, helpers[selection])
-            end,
-          }
+          if not helpers.List or helpers.List == "" then
+            return
+          end
+          local call = handler:connection_execute(conn.id, helpers.List)
+          result:set_call(call)
+          cb()
         end
 
         node.lazy_children = function()
@@ -236,6 +227,7 @@ local function handler_real_nodes(handler, result)
         -- set connection as active manually
         action_1 = function(cb)
           handler:set_current_connection(conn.id)
+          handler:connection_get_structure(conn.id)
           cb()
         end,
         -- edit connection

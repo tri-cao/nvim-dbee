@@ -213,6 +213,14 @@ function DrawerUI:get_actions()
     self.tree:render()
   end
 
+  local function toggle_node(node)
+    if node:is_expanded() then
+      collapse_node(node)
+    else
+      expand_node(node)
+    end
+  end
+
   -- wrapper for actions (e.g. action_1, action_2, action_3)
   ---@param action drawer_node_action
   local function perform_action(action)
@@ -247,12 +255,49 @@ function DrawerUI:get_actions()
     refresh = function()
       self:refresh()
     end,
+    refresh_metadata = function()
+      local node = self.tree:get_node()
+      while node and node.type ~= "connection" do
+        local parent_id = node:get_parent_id()
+        node = parent_id and self.tree:get_node(parent_id) or nil
+      end
+      if not node then
+        return
+      end
+      self.handler:connection_refresh_metadata(node.id)
+      self:refresh()
+    end,
     action_1 = function()
       local node = self.tree:get_node() --[[@as DrawerUINode]]
       if not node then
         return
       end
-      perform_action(node.action_1)
+      if node.type == "connection" then
+        local id = node.id
+        perform_action(node.action_1)
+        -- Selecting a connection can refresh and replace the tree nodes.
+        node = self.tree:get_node(id)
+        if node then
+          toggle_node(node)
+        end
+      elseif node.action_1 then
+        perform_action(node.action_1)
+      else
+        toggle_node(node)
+      end
+    end,
+    open_scratchpad = function()
+      local node = self.tree:get_node()
+      local selected = node
+      while node and node.type ~= "connection" do
+        local parent_id = node:get_parent_id()
+        node = parent_id and self.tree:get_node(parent_id) or nil
+      end
+      if node then
+        self.editor:open_connection_scratchpad(node.id)
+      elseif selected then
+        toggle_node(selected)
+      end
     end,
     action_2 = function()
       local node = self.tree:get_node() --[[@as DrawerUINode]]
@@ -287,11 +332,7 @@ function DrawerUI:get_actions()
       if not node then
         return
       end
-      if node:is_expanded() then
-        collapse_node(node)
-      else
-        expand_node(node)
-      end
+      toggle_node(node)
     end,
   }
 end

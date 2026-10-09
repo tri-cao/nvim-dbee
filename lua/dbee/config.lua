@@ -53,7 +53,7 @@ config.default = {
   },
   -- extra table helpers per connection type
   -- every helper value is a go-template with values set for
-  -- "Table", "Schema" and "Materialization"
+  -- "Table", "Schema", "Materialization" and "Project" (BigQuery)
   extra_helpers = {
     -- example:
     -- ["postgres"] = {
@@ -79,17 +79,17 @@ config.default = {
     mappings = {
       -- manually refresh drawer
       { key = "r", mode = "n", action = "refresh" },
+      -- reload cached tables and columns for the connection under the cursor
+      { key = "R", mode = "n", action = "refresh_metadata" },
       -- actions perform different stuff depending on the node:
-      -- action_1 opens a note or executes a helper
+      -- action_1 toggles a connection/schema, opens a note, or runs a table's List query
       { key = "<CR>", mode = "n", action = "action_1" },
       -- action_2 renames a note or sets the connection as active manually
       { key = "cw", mode = "n", action = "action_2" },
       -- action_3 deletes a note or connection (removes connection from the file if you configured it like so)
       { key = "dd", mode = "n", action = "action_3" },
-      -- these are self-explanatory:
-      -- { key = "c", mode = "n", action = "collapse" },
-      -- { key = "e", mode = "n", action = "expand" },
-      { key = "o", mode = "n", action = "toggle" },
+      -- open the connection's scratchpad and focus the editor
+      { key = "o", mode = "n", action = "open_scratchpad" },
       -- mappings for menu popups:
       { key = "<CR>", mode = "n", action = "menu_confirm" },
       { key = "y", mode = "n", action = "menu_yank" },

@@ -1,365 +1,174 @@
 package core
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
-
-	"golang.org/x/sync/errgroup"
 )
 
-func init() {
-	// gob doesn't know how to encode/decode time otherwise
-	gob.Register(time.Time{})
+func init() { gob.Register(time.Time{}) }
+
+const resultCacheBasePath = "/tmp/dbee-results"
+const resultChunkSize = 500
+const resultMagic = "DBEERS02"
+const resultPreambleSize = 16
+
+var ErrResultOverwritten = errors.New("result cache was replaced by a newer query")
+var errIncompleteResult = errors.New("result cache is not complete")
+
+// These fields describe this query's output, not database schema metadata.
+// The database metadata cache remains in its own metadata.sqlite3 file.
+type resultIndex struct {
+	CallID CallID
+	Header Header
+	Meta   Meta
+	Length int
+	Chunks []int64
 }
 
-const archiveBasePath = "/tmp/dbee-history/"
+type cacheLease struct{ callID CallID }
 
-// these variables create a file name for a specified type
-var (
-	archiveDir = func(callID CallID) string {
-		return filepath.Join(archiveBasePath, string(callID))
-	}
+type resultCache struct {
+	path   string
+	mu     sync.RWMutex
+	latest atomic.Pointer[cacheLease]
+}
 
-	metaFile = func(callID CallID) string {
-		return filepath.Join(archiveDir(callID), "meta.gob")
+var connectionResultCaches sync.Map
+
+func connectionResultPath(id ConnectionID) string {
+	return filepath.Join(resultCacheBasePath, fmt.Sprintf("%x.gob", sha256.Sum256([]byte(id))))
+}
+
+func cacheForConnection(id ConnectionID) *resultCache {
+	path := connectionResultPath(id)
+	if cached, ok := connectionResultCaches.Load(path); ok {
+		return cached.(*resultCache)
 	}
-	headerFile = func(callID CallID) string {
-		return filepath.Join(archiveDir(callID), "header.gob")
+	cache := &resultCache{path: path}
+	if file, err := os.Open(path); err == nil {
+		if index, _, err := readResultIndex(file); err == nil {
+			cache.latest.Store(&cacheLease{callID: index.CallID})
+		}
+		_ = file.Close()
 	}
-	rowFile = func(callID CallID, i int) string {
-		return filepath.Join(archiveDir(callID), fmt.Sprintf("row_%d.gob", i))
+	cached, _ := connectionResultCaches.LoadOrStore(path, cache)
+	return cached.(*resultCache)
+}
+
+func (cache *resultCache) claim(id CallID) *cacheLease {
+	lease := &cacheLease{callID: id}
+	cache.latest.Store(lease)
+	return lease
+}
+
+func (cache *resultCache) isCurrent(id CallID) bool {
+	lease := cache.latest.Load()
+	return lease != nil && lease.callID == id
+}
+
+// Clear the previous result even when the next query fails to execute.
+func (cache *resultCache) reset(lease *cacheLease) error {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	if cache.latest.Load() != lease {
+		return ErrResultOverwritten
 	}
-)
+	if err := os.MkdirAll(resultCacheBasePath, 0700); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(cache.path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	_, err = file.Write(append([]byte(resultMagic), make([]byte, 8)...))
+	closeErr := file.Close()
+	if err != nil {
+		return err
+	}
+	return closeErr
+}
+
+func readResultIndex(file *os.File) (*resultIndex, int64, error) {
+	var preamble [resultPreambleSize]byte
+	if _, err := file.ReadAt(preamble[:], 0); err != nil {
+		return nil, 0, err
+	}
+	if string(preamble[:8]) != resultMagic {
+		return nil, 0, errors.New("invalid result cache format")
+	}
+	position := int64(binary.LittleEndian.Uint64(preamble[8:]))
+	info, err := file.Stat()
+	if err != nil {
+		return nil, 0, err
+	}
+	if position < resultPreambleSize || position >= info.Size() {
+		return nil, 0, errIncompleteResult
+	}
+	var index resultIndex
+	if err := gob.NewDecoder(io.NewSectionReader(file, position, info.Size()-position)).Decode(&index); err != nil {
+		return nil, 0, fmt.Errorf("decode result index: %w", err)
+	}
+	if index.Length < 0 || len(index.Chunks) != (index.Length+resultChunkSize-1)/resultChunkSize {
+		return nil, 0, errors.New("invalid result cache row count")
+	}
+	previous := int64(resultPreambleSize - 1)
+	for _, offset := range index.Chunks {
+		if offset <= previous || offset >= position {
+			return nil, 0, errors.New("invalid result cache chunk offset")
+		}
+		previous = offset
+	}
+	return &index, position, nil
+}
 
 type archive struct {
-	id       CallID
-	isFilled bool
+	id    CallID
+	cache *resultCache
 }
 
-func newArchive(id CallID) *archive {
-	isFilled := true
-	_, err := os.Stat(archiveDir(id))
-	if os.IsNotExist(err) {
-		isFilled = false
-	}
-	return &archive{
-		id:       id,
-		isFilled: isFilled,
-	}
+func newArchive(connID ConnectionID, id CallID) *archive {
+	return &archive{id: id, cache: cacheForConnection(connID)}
 }
 
 func (a *archive) isEmpty() bool {
-	return !a.isFilled
+	_, err := a.getResult()
+	return err != nil
 }
 
-// archive stores the cache record to disk as a set of gob files
-func (a *archive) setResult(result *Result) error {
-	if a.isFilled {
-		return nil
+// Restore only the output header and row offsets. The one cache file must still
+// belong to this call; an old history entry never displays a newer query's rows.
+func (a *archive) getResult() (*Result, error) {
+	a.cache.mu.RLock()
+	defer a.cache.mu.RUnlock()
+	if !a.cache.isCurrent(a.id) {
+		return nil, ErrResultOverwritten
 	}
-
-	// create the directory for the history record
-	err := os.MkdirAll(archiveDir(a.id), os.ModePerm)
-	if err != nil {
-		return fmt.Errorf("os.MkdirAll: %w", err)
-	}
-
-	// serialize the data
-	// files inside the directory ..../call_id/:
-	// header.gob - header
-	// meta.gob - meta
-	// row_0.gob - first row
-	// row_n.gob - n-th row
-
-	// header
-	file, err := os.Create(headerFile(a.id))
-	if err != nil {
-		return fmt.Errorf("os.Create: %w", err)
-	}
-	defer file.Close()
-
-	encoder := gob.NewEncoder(file)
-	err = encoder.Encode(result.Header())
-	if err != nil {
-		return fmt.Errorf("encoder.Encode: %w", err)
-	}
-
-	// meta
-	file, err = os.Create(metaFile(a.id))
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	encoder = gob.NewEncoder(file)
-	err = encoder.Encode(*result.Meta())
-	if err != nil {
-		return err
-	}
-
-	// rows
-	chunkSize := 500
-	length := len(result.rows)
-
-	// write chunks concurrently
-	g := &errgroup.Group{}
-	g.SetLimit(10)
-	for i := 0; i <= length/chunkSize; i++ {
-		i := i
-		g.Go(func() error {
-			// get chunk
-			chunkStart := chunkSize * i
-			chunkEnd := chunkSize * (i + 1)
-			if chunkEnd > length {
-				chunkEnd = length
-			}
-			chunk, err := result.Rows(chunkStart, chunkEnd)
-			if err != nil {
-				return err
-			}
-			if len(chunk) == 0 {
-				return nil
-			}
-
-			file, err := os.Create(rowFile(a.id, i))
-			if err != nil {
-				return fmt.Errorf("os.Create: %w", err)
-			}
-			defer file.Close()
-
-			encoder := gob.NewEncoder(file)
-			err = encoder.Encode(chunk)
-			if err != nil {
-				return fmt.Errorf("encoder.Encode: %w", err)
-			}
-
-			return nil
-		})
-	}
-	if err := g.Wait(); err != nil {
-		return err
-	}
-
-	a.isFilled = true
-
-	return nil
-}
-
-// unarchive loads result from archive in form of an iterator
-func (a *archive) getResult() (*archiveRows, error) {
-	if !a.isFilled {
-		return nil, errors.New("archive does not contain a result")
-	}
-	return newArchiveRows(a.id)
-}
-
-type archiveRows struct {
-	id      CallID
-	header  Header
-	meta    *Meta
-	iter    func() (Row, error)
-	hasNext func() bool
-}
-
-func newArchiveRows(id CallID) (*archiveRows, error) {
-	r := &archiveRows{
-		id: id,
-	}
-
-	err := r.readHeader()
+	file, err := os.Open(a.cache.path)
 	if err != nil {
 		return nil, err
 	}
-	err = r.readMeta()
+	defer file.Close()
+	index, _, err := readResultIndex(file)
 	if err != nil {
 		return nil, err
 	}
-
-	r.readIter()
-
-	return r, nil
-}
-
-func (r *archiveRows) readHeader() error {
-	// header
-	var header Header
-	file, err := os.Open(headerFile(r.id))
-	if err != nil {
-		return fmt.Errorf("os.Open: %w", err)
+	if index.CallID != a.id {
+		return nil, ErrResultOverwritten
 	}
-	defer file.Close()
-
-	decoder := gob.NewDecoder(file)
-	err = decoder.Decode(&header)
-	if err != nil {
-		return fmt.Errorf("decoder.Decode: %w", err)
+	result := &Result{
+		header: index.Header, meta: &index.Meta, length: index.Length,
+		cache: a.cache, owner: a.id, chunks: index.Chunks,
+		isFilled: true, ready: make(chan struct{}),
 	}
-
-	r.header = header
-
-	return nil
-}
-
-func (r *archiveRows) readMeta() error {
-	// meta
-	var meta Meta
-	file, err := os.Open(metaFile(r.id))
-	if err != nil {
-		return fmt.Errorf("os.Open: %w", err)
-	}
-	defer file.Close()
-
-	decoder := gob.NewDecoder(file)
-	err = decoder.Decode(&meta)
-	if err != nil {
-		return fmt.Errorf("decoder.Decode: %w", err)
-	}
-
-	r.meta = &meta
-
-	return nil
-}
-
-// closeOnce closes the channel if it isn't already closed.
-func closeOnce[T any](ch chan T) {
-	select {
-	case <-ch:
-	default:
-		close(ch)
-	}
-}
-
-// readIter creates next and hasNext functions.
-// This method is basically the same as builders/NextYield, but is copy-pasted
-// because of import cycles.
-func (r *archiveRows) readIter() {
-	// open the first file if it exists,
-	// loop through its contents and try the next file
-	fileExists := func(rowIndex int) bool {
-		_, err := os.Stat(rowFile(r.id, rowIndex))
-		return err == nil
-	}
-
-	// openFile returns rows of the file
-	openFile := func(i int) ([]Row, error) {
-		file, err := os.Open(rowFile(r.id, i))
-		if err != nil {
-			return nil, fmt.Errorf("os.Open: %w", err)
-		}
-		defer file.Close()
-
-		var rows []Row
-
-		decoder := gob.NewDecoder(file)
-		err = decoder.Decode(&rows)
-		if err != nil {
-			return nil, fmt.Errorf("decoder.Decode: %w", err)
-		}
-
-		return rows, nil
-	}
-
-	resultsCh := make(chan []any, 10)
-	errorsCh := make(chan error, 1)
-	readyCh := make(chan struct{})
-	doneCh := make(chan struct{})
-
-	// spawn channel function
-	go func() {
-		defer func() {
-			close(doneCh)
-			closeOnce(readyCh)
-			close(resultsCh)
-			close(errorsCh)
-		}()
-
-		file := 0
-		for {
-			if !fileExists(file) {
-				return
-			}
-			rows, err := openFile(file)
-			if err != nil {
-				errorsCh <- err
-				return
-			}
-
-			for _, row := range rows {
-				resultsCh <- row
-				closeOnce(readyCh)
-			}
-
-			file++
-		}
-	}()
-
-	<-readyCh
-
-	var nextVal atomic.Value
-	var nextErr atomic.Value
-
-	r.hasNext = func() bool {
-		select {
-		case vals, ok := <-resultsCh:
-			if !ok {
-				return false
-			}
-			nextVal.Store(vals)
-			return true
-		case err := <-errorsCh:
-			if err != nil {
-				nextErr.Store(err)
-				return false
-			}
-		case <-doneCh:
-			if len(resultsCh) < 1 {
-				return false
-			}
-		case <-time.After(5 * time.Second):
-			nextErr.Store(errors.New("next row timeout"))
-			return false
-		}
-
-		return r.hasNext()
-	}
-
-	r.iter = func() (Row, error) {
-		var val Row
-		var err error
-
-		nval := nextVal.Load()
-		if nval != nil {
-			val = nval.([]any)
-		}
-		nerr := nextErr.Load()
-		if nerr != nil {
-			err = nerr.(error)
-		}
-		return val, err
-	}
-}
-
-func (r *archiveRows) Meta() *Meta {
-	return r.meta
-}
-
-func (r *archiveRows) Header() Header {
-	return r.header
-}
-
-func (r *archiveRows) Next() (Row, error) {
-	return r.iter()
-}
-
-func (r *archiveRows) HasNext() bool {
-	return r.hasNext()
-}
-
-func (r *archiveRows) Close() {
-	// no-op
+	close(result.ready)
+	return result, nil
 }

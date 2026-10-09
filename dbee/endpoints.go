@@ -148,6 +148,13 @@ func mountEndpoints(p *plugin.Plugin, h *handler.Handler) {
 		return handler.WrapColumns(cols), err
 	})
 
+	p.RegisterEndpoint("DbeeConnectionRefreshMetadata", func(args *struct {
+		ID core.ConnectionID `msgpack:",array"`
+	}) (any, error) {
+		structure, err := h.ConnectionRefreshMetadata(args.ID)
+		return handler.WrapStructures(structure), err
+	})
+
 	p.RegisterEndpoint(
 		"DbeeConnectionListDatabases",
 		func(args *struct {

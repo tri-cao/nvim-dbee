@@ -11,6 +11,7 @@ const (
 	CallStateArchived
 	CallStateArchiveFailed
 	CallStateCanceled
+	CallStateOverwritten
 )
 
 func CallStateFromString(s string) CallState {
@@ -35,6 +36,8 @@ func CallStateFromString(s string) CallState {
 
 	case CallStateCanceled.String():
 		return CallStateCanceled
+	case CallStateOverwritten.String():
+		return CallStateOverwritten
 
 	default:
 		return CallStateUnknown
@@ -63,6 +66,8 @@ func (s CallState) String() string {
 
 	case CallStateCanceled:
 		return "canceled"
+	case CallStateOverwritten:
+		return "overwritten"
 
 	default:
 		return "unknown"

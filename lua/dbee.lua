@@ -60,6 +60,13 @@ function dbee.is_open()
   return api.current_config().window_layout:is_open()
 end
 
+---Refresh cached tables and columns, then redraw the drawer.
+---@param id? connection_id defaults to the active connection
+function dbee.refresh_metadata(id)
+  api.core.connection_refresh_metadata(id)
+  api.ui.drawer_refresh()
+end
+
 ---Execute a query on current connection.
 ---Convenience wrapper around some api functions that executes a query on
 ---current connection and pipes the output to result UI.

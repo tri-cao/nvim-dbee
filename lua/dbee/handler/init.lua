@@ -228,6 +228,16 @@ function Handler:connection_get_structure(id)
 end
 
 ---@param id connection_id
+---@return DBStructure[]
+function Handler:connection_refresh_metadata(id)
+  local ret = vim.fn.DbeeConnectionRefreshMetadata(id)
+  if not ret or ret == vim.NIL then
+    return {}
+  end
+  return ret
+end
+
+---@param id connection_id
 ---@param opts { table: string, schema: string, materialization: string }
 ---@return Column[]
 function Handler:connection_get_columns(id, opts)

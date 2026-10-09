@@ -2,10 +2,13 @@ package adapters
 
 import (
 	"context"
+	"encoding/gob"
 	"fmt"
+	"math/big"
 	"net/url"
 
 	"cloud.google.com/go/bigquery"
+	"cloud.google.com/go/civil"
 	"google.golang.org/api/option"
 	"google.golang.org/api/option/internaloption"
 	"google.golang.org/grpc"
@@ -17,6 +20,14 @@ import (
 // Register client
 func init() {
 	_ = register(&BigQuery{}, "bigquery")
+	// Result values travel through a disk cache before display or export.
+	gob.Register([]bigquery.Value{})
+	gob.Register(&big.Rat{})
+	gob.Register(civil.Date{})
+	gob.Register(civil.Time{})
+	gob.Register(civil.DateTime{})
+	gob.Register(&bigquery.IntervalValue{})
+	gob.Register(&bigquery.RangeValue{})
 }
 
 var _ core.Adapter = (*BigQuery)(nil)
@@ -101,8 +112,12 @@ func (bq *BigQuery) Connect(rawURL string) (core.Driver, error) {
 }
 
 func (*BigQuery) GetHelpers(opts *core.TableOptions) map[string]string {
+	dataset := opts.Schema
+	if opts.Project != "" {
+		dataset = opts.Project + "." + dataset
+	}
 	return map[string]string{
-		"List":    fmt.Sprintf("SELECT * FROM `%s` TABLESAMPLE SYSTEM (5 PERCENT)", opts.Table),
-		"Columns": fmt.Sprintf("SELECT * FROM `%s.INFORMATION_SCHEMA.COLUMNS` WHERE TABLE_SCHEMA = '%s' AND TABLE_NAME = '%s'", opts.Schema, opts.Schema, opts.Table),
+		"List":    fmt.Sprintf("SELECT * FROM `%s.%s` TABLESAMPLE SYSTEM (5 PERCENT)", dataset, opts.Table),
+		"Columns": fmt.Sprintf("SELECT * FROM `%s.INFORMATION_SCHEMA.COLUMNS` WHERE TABLE_SCHEMA = '%s' AND TABLE_NAME = '%s'", dataset, opts.Schema, opts.Table),
 	}
 }

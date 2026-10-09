@@ -14,11 +14,12 @@ type (
 	CallID string
 
 	Call struct {
-		id        CallID
-		query     string
-		state     CallState
-		timeTaken time.Duration
-		timestamp time.Time
+		id           CallID
+		connectionID ConnectionID
+		query        string
+		state        CallState
+		timeTaken    time.Duration
+		timestamp    time.Time
 
 		result     *Result
 		archive    *archive
@@ -32,12 +33,13 @@ type (
 
 // callPersistent is used for marshaling and unmarshaling the call
 type callPersistent struct {
-	ID        string `json:"id"`
-	Query     string `json:"query"`
-	State     string `json:"state"`
-	TimeTaken int64  `json:"time_taken_us"`
-	Timestamp int64  `json:"timestamp_us"`
-	Error     string `json:"error,omitempty"`
+	ID           string       `json:"id"`
+	ConnectionID ConnectionID `json:"connection_id,omitempty"`
+	Query        string       `json:"query"`
+	State        string       `json:"state"`
+	TimeTaken    int64        `json:"time_taken_us"`
+	Timestamp    int64        `json:"timestamp_us"`
+	Error        string       `json:"error,omitempty"`
 }
 
 func (c *Call) toPersistent() *callPersistent {
@@ -47,12 +49,13 @@ func (c *Call) toPersistent() *callPersistent {
 	}
 
 	return &callPersistent{
-		ID:        string(c.id),
-		Query:     c.query,
-		State:     c.state.String(),
-		TimeTaken: c.timeTaken.Microseconds(),
-		Timestamp: c.timestamp.UnixMicro(),
-		Error:     errMsg,
+		ID:           string(c.id),
+		ConnectionID: c.connectionID,
+		Query:        c.query,
+		State:        c.GetState().String(),
+		TimeTaken:    c.timeTaken.Microseconds(),
+		Timestamp:    c.timestamp.UnixMicro(),
+		Error:        errMsg,
 	}
 }
 
@@ -70,10 +73,10 @@ func (c *Call) UnmarshalJSON(data []byte) error {
 	done := make(chan struct{})
 	close(done)
 
-	archive := newArchive(CallID(alias.ID))
+	archive := newArchive(alias.ConnectionID, CallID(alias.ID))
 	state := CallStateFromString(alias.State)
 	if state == CallStateArchived && archive.isEmpty() {
-		state = CallStateUnknown
+		state = CallStateOverwritten
 	}
 
 	var callErr error
@@ -82,15 +85,16 @@ func (c *Call) UnmarshalJSON(data []byte) error {
 	}
 
 	*c = Call{
-		id:        CallID(alias.ID),
-		query:     alias.Query,
-		state:     state,
-		timeTaken: time.Duration(alias.TimeTaken) * time.Microsecond,
-		timestamp: time.UnixMicro(alias.Timestamp),
-		err:       callErr,
+		id:           CallID(alias.ID),
+		connectionID: alias.ConnectionID,
+		query:        alias.Query,
+		state:        state,
+		timeTaken:    time.Duration(alias.TimeTaken) * time.Microsecond,
+		timestamp:    time.UnixMicro(alias.Timestamp),
+		err:          callErr,
 
 		result:  new(Result),
-		archive: newArchive(CallID(alias.ID)),
+		archive: archive,
 
 		done: done,
 	}
@@ -98,15 +102,18 @@ func (c *Call) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func newCallFromExecutor(executor func(context.Context) (ResultStream, error), query string, onEvent func(CallState, *Call)) *Call {
+func newCallFromExecutor(executor func(context.Context) (ResultStream, error), query string, onEvent func(CallState, *Call), connID ConnectionID) *Call {
 	id := CallID(uuid.New().String())
+	cache := cacheForConnection(connID)
+	lease := cache.claim(id)
 	c := &Call{
-		id:    id,
-		query: query,
-		state: CallStateUnknown,
+		id:           id,
+		connectionID: connID,
+		query:        query,
+		state:        CallStateUnknown,
 
 		result:  new(Result),
-		archive: newArchive(id),
+		archive: newArchive(connID, id),
 
 		done: make(chan struct{}),
 	}
@@ -143,6 +150,17 @@ func newCallFromExecutor(executor func(context.Context) (ResultStream, error), q
 
 		// execute the function
 		eventsCh <- CallStateExecuting
+		if err := cache.reset(lease); err != nil {
+			c.timeTaken = time.Since(c.timestamp)
+			c.err = err
+			if errors.Is(err, ErrResultOverwritten) {
+				eventsCh <- CallStateOverwritten
+			} else {
+				eventsCh <- CallStateExecutingFailed
+			}
+			close(c.done)
+			return
+		}
 		iter, err := executor(ctx)
 		if err != nil {
 			c.timeTaken = time.Since(c.timestamp)
@@ -153,21 +171,15 @@ func newCallFromExecutor(executor func(context.Context) (ResultStream, error), q
 		}
 
 		// set iterator to result
-		err = c.result.SetIter(iter, func() { eventsCh <- CallStateRetrieving })
+		err = c.result.setIter(iter, func() { eventsCh <- CallStateRetrieving }, cache, lease, false)
 		if err != nil {
 			c.timeTaken = time.Since(c.timestamp)
 			c.err = err
-			eventsCh <- CallStateRetrievingFailed
-			close(c.done)
-			return
-		}
-
-		// archive the result
-		err = c.archive.setResult(c.result)
-		if err != nil {
-			c.timeTaken = time.Since(c.timestamp)
-			c.err = err
-			eventsCh <- CallStateArchiveFailed
+			if errors.Is(err, ErrResultOverwritten) {
+				eventsCh <- CallStateOverwritten
+			} else {
+				eventsCh <- CallStateRetrievingFailed
+			}
 			close(c.done)
 			return
 		}
@@ -189,6 +201,9 @@ func (c *Call) GetQuery() string {
 }
 
 func (c *Call) GetState() CallState {
+	if (c.state == CallStateArchived || c.state == CallStateArchiveFailed) && !c.archive.cache.isCurrent(c.id) {
+		return CallStateOverwritten
+	}
 	return c.state
 }
 
@@ -220,15 +235,15 @@ func (c *Call) Cancel() {
 }
 
 func (c *Call) GetResult() (*Result, error) {
+	if !c.archive.cache.isCurrent(c.id) {
+		return nil, ErrResultOverwritten
+	}
 	if c.result.IsEmpty() {
-		iter, err := c.archive.getResult()
+		result, err := c.archive.getResult()
 		if err != nil {
 			return nil, fmt.Errorf("c.archive.getResult: %w", err)
 		}
-		err = c.result.SetIter(iter, nil)
-		if err != nil {
-			return nil, fmt.Errorf("c.result.setIter: %w", err)
-		}
+		c.result = result
 	}
 
 	return c.result, nil

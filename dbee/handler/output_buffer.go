@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"bufio"
 	"bytes"
 
 	"github.com/neovim/go-client/nvim"
@@ -20,10 +19,19 @@ type Buffer struct {
 }
 
 func (b *Buffer) Write(p []byte) (int, error) {
-	scanner := bufio.NewScanner(bytes.NewReader(p))
-	var lines [][]byte
-	for scanner.Scan() {
-		lines = append(lines, []byte(scanner.Text()))
+	// Always send an array, even for empty output. A nil slice encodes as
+	// MessagePack nil, which nvim_buf_set_lines does not accept.
+	lines := make([][]byte, 0)
+	if len(p) > 0 {
+		// Split directly so wide query results are not limited by Scanner's
+		// default maximum token size. Keep the same ScanLines newline behavior.
+		lines = bytes.Split(p, []byte{'\n'})
+		if len(lines[len(lines)-1]) == 0 {
+			lines = lines[:len(lines)-1]
+		}
+		for i, line := range lines {
+			lines[i] = bytes.TrimSuffix(line, []byte{'\r'})
+		}
 	}
 
 	const modifiableOptionName = "modifiable"

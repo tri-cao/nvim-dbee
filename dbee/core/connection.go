@@ -14,6 +14,7 @@ var ErrDatabaseSwitchingNotSupported = errors.New("database switching not suppor
 
 // TableOptions contain options for gathering information about specific table.
 type TableOptions struct {
+	Project         string
 	Table           string
 	Schema          string
 	Materialization StructureType
@@ -41,6 +42,11 @@ type (
 		SelectDatabase(string) error
 		ListDatabases() (current string, available []string, err error)
 	}
+
+	// ProjectIDProvider supplies the resolved project for table helpers.
+	ProjectIDProvider interface {
+		ProjectID() string
+	}
 )
 
 type ConnectionID string
@@ -51,6 +57,8 @@ type Connection struct {
 
 	driver  Driver
 	adapter Adapter
+
+	metadataDatabase string
 }
 
 func (s *Connection) MarshalJSON() ([]byte, error) {
@@ -109,7 +117,7 @@ func (c *Connection) Execute(query string, onEvent func(CallState, *Call)) *Call
 		return c.driver.Query(ctx, query)
 	}
 
-	return newCallFromExecutor(exec, query, onEvent)
+	return newCallFromExecutor(exec, query, onEvent, c.GetID())
 }
 
 // SelectDatabase tries to switch to a given database with the used client.
@@ -124,6 +132,7 @@ func (c *Connection) SelectDatabase(name string) error {
 	if err != nil {
 		return fmt.Errorf("switcher.SelectDatabase: %w", err)
 	}
+	c.metadataDatabase = name
 
 	return nil
 }
@@ -180,6 +189,15 @@ func (c *Connection) GetStructure() ([]*Structure, error) {
 func (c *Connection) GetHelpers(opts *TableOptions) map[string]string {
 	if opts == nil {
 		opts = &TableOptions{}
+	}
+	if c.GetType() == "bigquery" {
+		// BigQuery helpers need the connection's project; adapters are shared.
+		// Other database types keep their original helper options unchanged.
+		resolved := *opts
+		if project, ok := c.driver.(ProjectIDProvider); ok && resolved.Project == "" {
+			resolved.Project = project.ProjectID()
+		}
+		opts = &resolved
 	}
 
 	helpers := c.adapter.GetHelpers(opts)

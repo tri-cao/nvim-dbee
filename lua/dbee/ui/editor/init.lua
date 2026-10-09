@@ -46,6 +46,7 @@ function EditorUI:new(handler, result, opts)
     window_options = vim.tbl_extend("force", {}, opts.window_options or {}),
     buffer_options = vim.tbl_extend("force", {
       buflisted = false,
+      bufhidden = "hide",
       swapfile = false,
       filetype = "sql",
     }, opts.buffer_options or {}),
@@ -404,6 +405,21 @@ function EditorUI:get_current_note()
   return note
 end
 
+---Opens the dedicated scratchpad for a connection and focuses the editor.
+---@param conn_id connection_id
+function EditorUI:open_connection_scratchpad(conn_id)
+  local note_id
+  for _, note in ipairs(self:namespace_get_notes(conn_id)) do
+    if note.name == "scratchpad.sql" then
+      note_id = note.id
+      break
+    end
+  end
+  note_id = note_id or self:namespace_create_note(conn_id, "scratchpad.sql")
+  self.handler:set_current_connection(conn_id)
+  self:set_current_note(note_id)
+end
+
 -- Sets note with id as the current note
 -- and opens it in the window
 ---@param id note_id
@@ -444,11 +460,11 @@ function EditorUI:display_note(id)
     return
   end
 
-  -- otherwise open a file and update note's buffer
+  -- Load the note without discarding edits in the previously displayed buffer.
+  local bufnr = vim.fn.bufadd(note.file)
+  vim.fn.bufload(bufnr)
+  vim.api.nvim_win_set_buf(self.winid, bufnr)
   vim.api.nvim_set_current_win(self.winid)
-  vim.cmd("e " .. note.file)
-
-  local bufnr = vim.api.nvim_get_current_buf()
   self.notes[namespace][id].bufnr = bufnr
 
   -- configure options and mappings on new buffer
