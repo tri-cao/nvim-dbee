@@ -264,6 +264,13 @@ Here are a few steps to quickly get started:
 | `require("dbee").api.ui.result_page_last()`                                          |   Go to the last page   |                                 E                                 |
 | `require("dbee").api.ui.result_page_first()`                                         |  Go to the first page   |                                 F                                 |
 
+- In the "result" buffer, `w`, `b`, `W`, and `B` move between words within the current row in
+  normal and visual mode. They stop at the end or start of the row, including counted motions
+  such as `3w` or `3W`. `W` and `B` treat each sequence of non-whitespace characters as a word.
+
+- Column names stay pinned at the top when scrolling results and follow horizontal scrolling.
+  Set `result.pin_header = false` to disable this. Pinning requires `wrap = false` (the default).
+
 - Once in the "result" buffer, you can yank the results with the following keys:
 
   - `yaj` yank current row as json (or row range in visual mode)

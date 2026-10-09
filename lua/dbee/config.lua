@@ -25,7 +25,7 @@ local config = {}
 ---@divider -
 
 ---Configuration for result UI tile.
----@alias result_config { focus_result: boolean, mappings: key_mapping[], page_size: integer, progress: progress_config, window_options: table<string, any>, buffer_options: table<string, any> }
+---@alias result_config { focus_result: boolean, pin_header: boolean, mappings: key_mapping[], page_size: integer, progress: progress_config, window_options: table<string, any>, buffer_options: table<string, any> }
 
 ---Configuration for editor UI tile.
 ---@alias editor_config { directory: string, mappings: key_mapping[], window_options: table<string, any>, buffer_options: table<string, any> }
@@ -226,6 +226,9 @@ config.default = {
     -- whether to focus the result window after a query
     focus_result = true,
 
+    -- keep column names visible when scrolling results (requires nowrap)
+    pin_header = true,
+
     -- progress (loading) screen options
     progress = {
       -- spinner to use in progress display
@@ -236,6 +239,15 @@ config.default = {
 
     -- mappings for the buffer
     mappings = {
+      -- move between words without leaving the current result row
+      { key = "w", mode = "n", action = "word_next" },
+      { key = "b", mode = "n", action = "word_prev" },
+      { key = "w", mode = "x", action = "word_next" },
+      { key = "b", mode = "x", action = "word_prev" },
+      { key = "W", mode = "n", action = "big_word_next" },
+      { key = "B", mode = "n", action = "big_word_prev" },
+      { key = "W", mode = "x", action = "big_word_next" },
+      { key = "B", mode = "x", action = "big_word_prev" },
       -- next/previous page
       { key = "L", mode = "", action = "page_next" },
       { key = "H", mode = "", action = "page_prev" },
@@ -354,6 +366,7 @@ function config.validate(cfg)
     drawer_candies = { cfg.drawer.candies, "table" },
     drawer_mappings = { cfg.drawer.mappings, "table" },
     result_page_size = { cfg.result.page_size, "number" },
+    result_pin_header = { cfg.result.pin_header, "boolean" },
     result_progress = { cfg.result.progress, "table" },
     result_mappings = { cfg.result.mappings, "table" },
     editor_mappings = { cfg.editor.mappings, "table" },

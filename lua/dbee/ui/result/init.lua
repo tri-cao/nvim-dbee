@@ -1,6 +1,7 @@
 local utils = require("dbee.utils")
 local progress = require("dbee.ui.result.progress")
 local common = require("dbee.ui.common")
+local Header = require("dbee.ui.result.header")
 
 -- ResultUI represents the part of ui with displayed results
 ---@class ResultUI
@@ -17,6 +18,7 @@ local common = require("dbee.ui.common")
 ---@field private progress_opts progress_config
 ---@field private window_options table<string, any> a table of window options.
 ---@field private buffer_options table<string, any> a table of buffer options.
+---@field private header? ResultHeader pinned column names
 local ResultUI = {}
 
 ---@param handler Handler
@@ -62,6 +64,9 @@ function ResultUI:new(handler, opts)
   -- create a buffer for drawer and configure it
   o.bufnr = common.create_blank_buffer("dbee-result", o.buffer_options)
   common.configure_buffer_mappings(o.bufnr, o:get_actions(), opts.mappings)
+  if opts.pin_header ~= false then
+    o.header = Header:new(o.bufnr)
+  end
 
   handler:register_event_listener("call_state_changed", function(data)
     o:on_call_state_changed(data)
@@ -139,11 +144,17 @@ end
 
 ---@private
 function ResultUI:display_progress()
+  if self.header then
+    self.header:set(nil)
+  end
   self.stop_progress = progress.display(self.bufnr, self.progress_opts)
 end
 
 ---@private
 function ResultUI:display_status()
+  if self.header then
+    self.header:set(nil)
+  end
   if not self.current_call then
     error("no call set to result")
   end
@@ -216,6 +227,9 @@ function ResultUI:display_result(page)
 
   -- call go function
   local length = self.handler:call_display_result(self.current_call.id, self.bufnr, from, to)
+  if self.header then
+    self.header:set(vim.api.nvim_buf_get_lines(self.bufnr, 0, 1, false)[1])
+  end
 
   -- adjust page ammount
   self.page_ammount = math.floor(length / self.page_size)
@@ -244,9 +258,36 @@ function ResultUI:display_result(page)
 end
 
 ---@private
+---@param motion "w"|"b"|"W"|"B"
+function ResultUI:move_word(motion)
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  vim.cmd("normal! " .. vim.v.count1 .. motion)
+
+  -- Keep native word motions, but stop at the current row's boundary.
+  if vim.api.nvim_win_get_cursor(0)[1] ~= cursor[1] then
+    local line = vim.api.nvim_buf_get_lines(self.bufnr, cursor[1] - 1, cursor[1], false)[1]
+    local forward = motion == "w" or motion == "W"
+    local col = forward and math.max(#line - 1, 0) or 0
+    vim.api.nvim_win_set_cursor(0, { cursor[1], col })
+  end
+end
+
+---@private
 ---@return table<string, fun()>
 function ResultUI:get_actions()
   return {
+    word_next = function()
+      self:move_word("w")
+    end,
+    word_prev = function()
+      self:move_word("b")
+    end,
+    big_word_next = function()
+      self:move_word("W")
+    end,
+    big_word_prev = function()
+      self:move_word("B")
+    end,
     page_next = function()
       self:page_next()
     end,
@@ -301,6 +342,9 @@ end
 -- sets call's result to Result's buffer
 ---@param call CallDetails
 function ResultUI:set_call(call)
+  if self.header then
+    self.header:set(nil)
+  end
   self.page_index = 0
   self.page_ammount = 0
   self.current_call = call
@@ -481,6 +525,9 @@ function ResultUI:show(winid)
 
   -- configure window options (needs to be set after setting the buffer to window)
   common.configure_window_options(self.winid, self.window_options)
+  if self.header then
+    self.header:show(self.winid)
+  end
 
   -- display the current result
   local ok = pcall(self.page_current, self)

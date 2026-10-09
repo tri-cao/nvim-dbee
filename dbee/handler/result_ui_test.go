@@ -75,3 +75,24 @@ return displays
 	require.NoError(t, err)
 	require.Equal(t, 2, displays)
 }
+
+func TestResultUIPinsColumnNames(t *testing.T) {
+	if _, err := exec.LookPath("nvim"); err != nil {
+		t.Skip("nvim is required for result UI tests")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+	vim, err := nvim.NewChildProcess(
+		nvim.ChildProcessContext(ctx),
+		nvim.ChildProcessArgs("--embed", "--headless", "-u", "NONE", "-n", "-i", "NONE"),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = vim.Command("qa!")
+		require.NoError(t, vim.Close())
+	})
+	require.NoError(t, vim.AttachUI(80, 24, map[string]interface{}{"rgb": true}))
+	root, err := filepath.Abs("../..")
+	require.NoError(t, err)
+	require.NoError(t, vim.ExecLua(`dofile(... .. "/tests/result_header.lua")`, nil, root))
+}
