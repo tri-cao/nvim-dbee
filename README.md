@@ -194,6 +194,10 @@ require("dbee").store(format, output, opts)
 
 The same functions are also available through the `:Dbee` user command.
 
+By default, DBee opens its editor, results, drawer, and call log as windows in a dedicated tab.
+Calling `open()` again focuses that tab and resets the pane sizes. Closing DBee returns to the
+previous window and preserves unsaved notes in their buffers.
+
 <!-- DOCGEN_IGNORE_START -->
 
 </details>
@@ -215,6 +219,9 @@ Here are a few steps to quickly get started:
   - All nodes:
 
     - Press `<CR>` to toggle grouping nodes.
+    - Double click a node to perform its `<CR>` action: open a note buffer, expand / collapse a
+      group or connection, or run a table / view's `List` query. Enable mouse support with
+      `:set mouse=a` if needed.
     - Press `r` to manually refresh the tree.
 
   - Connections:
@@ -225,7 +232,9 @@ Here are a few steps to quickly get started:
     - Press `<CR>` on a connection to activate it and expand / collapse it; on a dataset, schema,
       or database group to expand / collapse it; on a table or view to run its `List` query directly.
     - Press `o` on a connection or any dataset, database, table, or column inside it to open that
-      connection's `scratchpad.sql` and focus the editor. The scratchpad is created once and reused.
+      connection's scratchpad and focus the editor. Its name is `<connection name>.sql`, and its
+      buffer appears in the bufferline. The scratchpad is created once and reused. Existing
+      `scratchpad.sql` notes remain available in the drawer.
 
   - Scratchpads:
 

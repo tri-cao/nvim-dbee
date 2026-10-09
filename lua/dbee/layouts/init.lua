@@ -1,4 +1,3 @@
-local tools = require("dbee.layouts.tools")
 local utils = require("dbee.utils")
 local api_ui = require("dbee.api.ui")
 
@@ -6,6 +5,7 @@ local api_ui = require("dbee.api.ui")
 ---@brief [[
 ---Defines the layout of UI windows.
 ---The default layout is already defined, but it's possible to define your own layout.
+---The default layout opens all UI windows in a dedicated tabpage and reuses it on later opens.
 ---
 ---Layout implementation should implement the |Layout| interface and show the UI on screen
 ---as seen fit.
@@ -27,17 +27,16 @@ local layouts = {}
 
 ---@divider -
 
--- Default layout uses a helper to save the existing window layout before opening any windows,
--- then makes a new empty window for the editor and then opens result and drawer.
--- When later calling close(), the previously saved layout is restored.
+-- Default layout owns a tabpage containing the editor, result, drawer, and call log.
+-- Closing it returns to the previous window without rebuilding the original layout.
 ---@class DefaultLayout: Layout
 ---@field private drawer_width integer
 ---@field private result_height integer
 ---@field private call_log_height integer
----@field private egg? layout_egg
+---@field private tabpage? integer
+---@field private previous_win? integer
 ---@field private windows table<string, integer>
 ---@field private on_switch "immutable"|"close"
----@field private is_opened boolean
 layouts.Default = {}
 
 ---Create a default layout.
@@ -56,10 +55,10 @@ function layouts.Default:new(opts)
 
   ---@type DefaultLayout
   local o = {
-    egg = nil,
+    tabpage = nil,
+    previous_win = nil,
     windows = {},
     on_switch = opts.on_switch or "immutable",
-    is_opened = false,
     drawer_width = opts.drawer_width or 40,
     result_height = opts.result_height or 20,
     call_log_height = opts.call_log_height or 20,
@@ -116,7 +115,14 @@ function layouts.Default:configure_window_on_quit(winid)
   utils.create_singleton_autocmd({ "QuitPre" }, {
     window = winid,
     callback = function()
-      self:close()
+      -- Let :quit finish before closing the rest of the tab, so it cannot
+      -- accidentally quit the window we return to.
+      local tabpage = self.tabpage
+      vim.schedule(function()
+        if self.tabpage == tabpage then
+          self:close()
+        end
+      end)
     end,
   })
 end
@@ -124,18 +130,24 @@ end
 ---@package
 ---@return boolean
 function layouts.Default:is_open()
-  return self.is_opened
+  return self.tabpage ~= nil and vim.api.nvim_tabpage_is_valid(self.tabpage)
 end
 
 ---@package
 function layouts.Default:open()
-  -- save layout before opening ui
-  self.egg = tools.save()
+  if self:is_open() then
+    return self:reset()
+  end
+
+  self.previous_win = vim.api.nvim_get_current_win()
+  -- Reuse the source buffer until the editor is shown, avoiding an unused
+  -- [No Name] buffer from :tabnew.
+  vim.cmd("tab split")
+  self.tabpage = vim.api.nvim_get_current_tabpage()
 
   self.windows = {}
 
   -- editor
-  tools.make_only(0)
   local editor_win = vim.api.nvim_get_current_win()
   self.windows["editor"] = editor_win
   api_ui.editor_show(editor_win)
@@ -168,28 +180,48 @@ function layouts.Default:open()
 
   -- set cursor to editor
   vim.api.nvim_set_current_win(editor_win)
-
-  self.is_opened = true
 end
 
 ---@package
 function layouts.Default:reset()
+  vim.api.nvim_set_current_tabpage(self.tabpage)
   vim.api.nvim_win_set_height(self.windows["result"], self.result_height)
   vim.api.nvim_win_set_width(self.windows["drawer"], self.drawer_width)
-  vim.api.nvim_win_set_height(self.windows["call_log"], self.result_height)
+  vim.api.nvim_win_set_height(self.windows["call_log"], self.call_log_height)
+  vim.api.nvim_set_current_win(self.windows["editor"])
 end
 
 ---@package
 function layouts.Default:close()
-  -- close all windows
-  for _, win in pairs(self.windows) do
-    pcall(vim.api.nvim_win_close, win, false)
+  if not self:is_open() then
+    self.tabpage = nil
+    self.previous_win = nil
+    self.windows = {}
+    return
   end
 
-  -- restore layout
-  tools.restore(self.egg)
-  self.egg = nil
-  self.is_opened = false
+  local current_win = vim.api.nvim_get_current_win()
+  local return_win = current_win
+  if vim.api.nvim_get_current_tabpage() == self.tabpage then
+    return_win = self.previous_win
+  end
+
+  -- Neovim cannot close its last tabpage. Keep an empty tab if the user
+  -- already closed all the other tabs.
+  if #vim.api.nvim_list_tabpages() == 1 then
+    vim.cmd("tabnew")
+  end
+
+  vim.api.nvim_set_current_tabpage(self.tabpage)
+  -- Keep unsaved notes in their buffers when hiding the UI.
+  vim.cmd("hide tabclose")
+  self.tabpage = nil
+  self.previous_win = nil
+  self.windows = {}
+
+  if return_win and vim.api.nvim_win_is_valid(return_win) then
+    vim.api.nvim_set_current_win(return_win)
+  end
 end
 
 return layouts

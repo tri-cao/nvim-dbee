@@ -255,6 +255,28 @@ function DrawerUI:get_actions()
     refresh = function()
       self:refresh()
     end,
+    mouse_action = function()
+      local mouse = vim.fn.getmousepos()
+      if mouse.winid == 0 or mouse.line == 0 then
+        return
+      end
+      if vim.api.nvim_win_get_buf(mouse.winid) ~= self.bufnr then
+        return
+      end
+      -- getmousepos() clamps clicks below the buffer to its last line.
+      local position = vim.fn.screenpos(mouse.winid, mouse.line, mouse.column)
+      if position.row ~= mouse.screenrow then
+        return
+      end
+      local node = self.tree:get_node(mouse.line)
+      if not node or node.type == "separator" then
+        return
+      end
+      -- Mouse mappings replace Neovim's default cursor movement.
+      vim.api.nvim_set_current_win(mouse.winid)
+      vim.api.nvim_win_set_cursor(mouse.winid, { mouse.line, 0 })
+      self:do_action("action_1")
+    end,
     refresh_metadata = function()
       local node = self.tree:get_node()
       while node and node.type ~= "connection" do

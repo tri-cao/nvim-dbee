@@ -84,6 +84,8 @@ config.default = {
       -- actions perform different stuff depending on the node:
       -- action_1 toggles a connection/schema, opens a note, or runs a table's List query
       { key = "<CR>", mode = "n", action = "action_1" },
+      -- perform the primary action on the node under the mouse
+      { key = "<2-LeftMouse>", mode = "n", action = "mouse_action" },
       -- action_2 renames a note or sets the connection as active manually
       { key = "cw", mode = "n", action = "action_2" },
       -- action_3 deletes a note or connection (removes connection from the file if you configured it like so)

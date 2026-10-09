@@ -412,6 +412,7 @@ UI Layout                                                      *dbee.ref.layout*
 
 Defines the layout of UI windows.
 The default layout is already defined, but it's possible to define your own layout.
+The default layout opens all UI windows in a dedicated tabpage and reuses it on later opens.
 
 Layout implementation should implement the |Layout| interface and show the UI on screen
 as seen fit.

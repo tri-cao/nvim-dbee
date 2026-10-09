@@ -45,7 +45,7 @@ function EditorUI:new(handler, result, opts)
     mappings = opts.mappings,
     window_options = vim.tbl_extend("force", {}, opts.window_options or {}),
     buffer_options = vim.tbl_extend("force", {
-      buflisted = false,
+      buflisted = true,
       bufhidden = "hide",
       swapfile = false,
       filetype = "sql",
@@ -95,6 +95,7 @@ function EditorUI:create_welcome_note()
 
   -- configure options and mappings on new buffer
   common.configure_buffer_options(bufnr, self.buffer_options)
+  vim.api.nvim_buf_set_option(bufnr, "buflisted", false)
   common.configure_buffer_mappings(bufnr, self:get_actions(), self.mappings)
 
   return note_id
@@ -408,14 +409,25 @@ end
 ---Opens the dedicated scratchpad for a connection and focuses the editor.
 ---@param conn_id connection_id
 function EditorUI:open_connection_scratchpad(conn_id)
+  local conn = self.handler:connection_get_params(conn_id)
+  if not conn then
+    error("invalid connection id")
+  end
+
+  -- Keep the connection's display name while making it a safe file name.
+  local name = conn.name:gsub("[/\\%c]", "_")
+  if not vim.endswith(name, ".sql") then
+    name = name .. ".sql"
+  end
+
   local note_id
   for _, note in ipairs(self:namespace_get_notes(conn_id)) do
-    if note.name == "scratchpad.sql" then
+    if note.name == name then
       note_id = note.id
       break
     end
   end
-  note_id = note_id or self:namespace_create_note(conn_id, "scratchpad.sql")
+  note_id = note_id or self:namespace_create_note(conn_id, name)
   self.handler:set_current_connection(conn_id)
   self:set_current_note(note_id)
 end

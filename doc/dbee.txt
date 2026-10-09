@@ -175,6 +175,8 @@ Here are the defaults:
           -- actions perform different stuff depending on the node:
           -- action_1 toggles a connection/schema, opens a note, or runs a table's List query
           { key = "<CR>", mode = "n", action = "action_1" },
+          -- perform the primary action on the node under the mouse
+          { key = "<2-LeftMouse>", mode = "n", action = "mouse_action" },
           -- action_2 renames a note or sets the connection as active manually
           { key = "cw", mode = "n", action = "action_2" },
           -- action_3 deletes a note or connection (removes connection from the file if you configured it like so)
@@ -462,6 +464,9 @@ Here are a few steps to quickly get started:
     the config):
     - All nodes:
         - Press `<CR>` to toggle grouping nodes.
+        - Double click a node to perform its `<CR>` action: open a note buffer, expand / collapse a
+            group or connection, or run a table / view's `List` query. Enable mouse support with
+            `:set mouse=a` if needed.
         - Press `r` to manually refresh the tree.
     - Connections:
         - Press `cw` to edit the connection
