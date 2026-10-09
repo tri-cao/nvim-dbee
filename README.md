@@ -25,6 +25,10 @@
 
 **Get Results FAST With Under-the-hood Iterator!**
 
+SELECT queries without an outer limit automatically use `LIMIT 100` on PostgreSQL, MySQL, SQLite,
+DuckDB, ClickHouse, BigQuery, Redshift, and Databricks. Add an explicit `LIMIT` to retrieve a different
+number of rows. Existing limits and write statements are preserved.
+
 **Bees Love It!**
 
 ***Alpha Software - Expect Breaking Changes!***
