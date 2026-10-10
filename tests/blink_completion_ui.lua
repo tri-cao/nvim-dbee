@@ -88,8 +88,39 @@ local function words()
   end
   return ret
 end
+local active_connection = conn
 local phases = {
   function()
+    conn = nil
+    input("isel")
+  end,
+  function()
+    assert(words().SELECT, "SQL keyword prefix did not open Blink")
+    assert(vim.api.nvim_get_current_line() == "sel", "Blink keyword popup changed typed SQL")
+    input("<C-n>")
+  end,
+  function()
+    input("<CR>")
+  end,
+  function()
+    assert(vim.api.nvim_get_current_line() == "SELECT", "Blink keyword acceptance replaced the wrong range")
+    input(" * FROM users wh")
+  end,
+  function()
+    assert(words().WHERE, "Blink keywords stopped after a table name")
+    input("<C-n><C-n>")
+  end,
+  function()
+    input("<CR>")
+  end,
+  function()
+    assert(vim.api.nvim_get_current_line() == "SELECT * FROM users WHERE", "Blink clause keyword was not accepted")
+    input("<Esc>")
+  end,
+  function()
+    conn = active_connection
+    vim.api.nvim_buf_set_lines(sql, 0, -1, false, { "" })
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
     input("iSELECT * FROM us")
   end,
   function()
@@ -177,13 +208,30 @@ local phases = {
   function()
     assert(words().name, "comma did not suggest scratchpad columns")
     assert(vim.api.nvim_get_current_line() == "SELECT id,", "comma completion changed typed text")
+    input(" ")
+  end,
+  function()
+    assert(words().name, "space after comma hid scratchpad columns")
+    input("  ")
+  end,
+  function()
+    assert(words().name, "multiple spaces after comma hid scratchpad columns")
     input("<CR>")
   end,
   function()
+    assert(words().name, "newline after comma hid scratchpad columns")
     assert(
-      vim.deep_equal(vim.api.nvim_buf_get_lines(0, 0, -1, false), { "SELECT id,", "", "FROM public.users" }),
+      vim.deep_equal(vim.api.nvim_buf_get_lines(0, 0, -1, false), { "SELECT id,   ", "", "FROM public.users" }),
       "Enter accepted a column after a comma in the scratchpad"
     )
+    input("  ")
+  end,
+  function()
+    assert(words().name, "indentation after comma hid scratchpad columns")
+    input("<CR>")
+  end,
+  function()
+    assert(words().name, "second newline after comma hid scratchpad columns")
     input("<Esc>")
   end,
   function()
@@ -197,20 +245,28 @@ local phases = {
     input(" ")
   end,
   function()
-    -- Blink blocks automatic triggers on whitespace by default; also test
-    -- Enter with a menu explicitly opened after the space.
-    input("<C-Space>")
+    assert(words().name, "space after comma hid SQL columns")
+    input("  ")
   end,
   function()
     assert(words().name, "comma and space did not suggest SQL columns")
-    assert(vim.api.nvim_get_current_line() == "SELECT id, ", "column popup inserted a suggestion")
+    assert(vim.api.nvim_get_current_line() == "SELECT id,   ", "column popup inserted a suggestion")
     input("<CR>")
   end,
   function()
+    assert(words().name, "newline after comma hid SQL columns")
     assert(
-      vim.deep_equal(vim.api.nvim_buf_get_lines(sql, 0, -1, false), { "SELECT id, ", "", "FROM public.users" }),
+      vim.deep_equal(vim.api.nvim_buf_get_lines(sql, 0, -1, false), { "SELECT id,   ", "", "FROM public.users" }),
       "Enter accepted a column after comma and space in SQL"
     )
+    input("<Tab>")
+  end,
+  function()
+    assert(words().name, "indentation after comma hid SQL columns")
+    input("<CR>")
+  end,
+  function()
+    assert(words().name, "second newline after comma hid SQL columns")
     input("na")
   end,
   function()
@@ -219,12 +275,12 @@ local phases = {
   end,
   function()
     assert(cmp.get_selected_item().label == "name", "explicit selection did not choose the column")
-    assert(vim.api.nvim_get_current_line() == "na", "selecting inserted text before acceptance")
+    assert(vim.api.nvim_get_current_line() == "\tna", "selecting inserted text before acceptance")
     input("<CR>")
   end,
   function()
     assert(
-      vim.deep_equal(vim.api.nvim_buf_get_lines(sql, 0, -1, false), { "SELECT id, ", "name", "FROM public.users" }),
+      vim.deep_equal(vim.api.nvim_buf_get_lines(sql, 0, -1, false), { "SELECT id,   ", "\t", "\tname", "FROM public.users" }),
       "Enter did not accept the explicitly selected column"
     )
     input("<Esc>")
@@ -378,7 +434,9 @@ local phases = {
     assert(vim.deep_equal(require("blink.cmp.sources.lib").get_enabled_provider_ids("default"), { "buffer" }))
     assert(not require("blink.cmp.sources.lib").get_provider_by_id("dbee"):enabled())
     vim.fn.delete(directory, "rf")
-    print("Blink UI: SQL files, scratchpads, commas, preselection, closing quotes, Enter, and acceptance passed")
+    print(
+      "Blink UI: keywords, SQL files, scratchpads, commas, preselection, closing quotes, Enter, and acceptance passed"
+    )
     vim.cmd("qa!")
   end,
 }

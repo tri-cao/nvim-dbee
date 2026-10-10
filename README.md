@@ -267,7 +267,9 @@ Here are a few steps to quickly get started:
   (top-right by default) and start writing queries. In editor pane, you can use the following
   actions:
 
-  - SQL suggestions appear automatically as you type. FROM and JOIN suggest projects, databases,
+  - SQL suggestions appear automatically as you type. Keyword prefixes such as `sel`, `wh`, and
+    `jo` suggest `SELECT`, `WHERE`, and `JOIN`, including before a connection is selected.
+    FROM and JOIN suggest projects, databases,
     datasets, schemas, tables, views, and CTEs from the active connection. Other clauses suggest
     columns from the current query's sources, including aliases and subquery/CTE output columns.
     Shared column names are qualified with their table alias to avoid ambiguous SQL.
@@ -283,6 +285,26 @@ Here are a few steps to quickly get started:
   - Blink can use the `dbee.completion.blink` provider in `sources.providers`. Enable it for SQL
     filetypes to complete both scratchpads and ordinary SQL files using DBee's active connection.
     Set `editor.completion.auto = false` when Blink manages the completion menu.
+    To keep suggestions after commas while typing spaces or tabs, allow whitespace triggers for SQL.
+    Run the Enter continuation helper before Blink's accept/fallback actions to also continue
+    suggestions after newlines in DBee scratchpads and ordinary SQL files:
+
+    ```lua
+    completion = {
+      trigger = {
+        show_on_blocked_trigger_characters = function()
+          if ({ sql = true, mysql = true, plsql = true })[vim.bo.filetype] then
+            return {}
+          end
+          return { " ", "\n", "\t" }
+        end,
+      },
+      list = { selection = { preselect = false, auto_insert = false } },
+    },
+    keymap = {
+      ["<CR>"] = { require("dbee.completion.blink").continue_after_comma, "accept", "fallback" },
+    },
+    ```
 
   - Press Enter in normal mode to run the SQL statement under the cursor.
   - Highlight some text in visual mode and press `BB` - this will run the selected query on the

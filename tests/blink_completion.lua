@@ -37,6 +37,8 @@ vim.bo[buf].filetype = "sql"
 assert(source:enabled(), "provider is disabled in ordinary SQL files")
 assert(vim.tbl_contains(source:get_trigger_characters(), "."))
 assert(vim.tbl_contains(source:get_trigger_characters(), " "))
+assert(vim.tbl_contains(source:get_trigger_characters(), "\n"))
+assert(vim.tbl_contains(source:get_trigger_characters(), "\t"))
 local checks = 0
 local function suggest(query, expected, result, filetype)
   local cursor = assert(query:find("|", 1, true))
@@ -80,9 +82,23 @@ local function suggest(query, expected, result, filetype)
     assert(#response.items == 0, "unexpected completions")
   end
   checks = checks + 1
+  return selected
 end
+local keyword = suggest("sel|", "SELECT", "SELECT")
+assert(keyword.kind == vim.lsp.protocol.CompletionItemKind.Keyword)
+assert(keyword.detail == "[SQL keyword]")
+suggest("SELECT * FROM users wh|", "WHERE", "SELECT * FROM users WHERE")
+suggest("-- café\n  se|", "SELECT", "-- café\n  SELECT")
 suggest("SELECT * FROM us|", "public.users", "SELECT * FROM public.users")
 suggest("SELECT * FROM public.us|", "public.users", "SELECT * FROM public.users")
+for _, whitespace in ipairs { "", " ", "   ", "\n", "\n\t", "  \n\n  " } do
+  suggest("SELECT id," .. whitespace .. "| FROM users", "name", "SELECT id," .. whitespace .. "name FROM users")
+  suggest(
+    "SELECT * FROM users," .. whitespace .. "|",
+    "public.orders",
+    "SELECT * FROM users," .. whitespace .. "public.orders"
+  )
+end
 suggest("SELECT u.na| FROM users u", "u.name", "SELECT u.name FROM users u")
 suggest("-- café\nSELECT u.na| FROM users u", "u.name", "-- café\nSELECT u.name FROM users u")
 suggest('SELECT "é".na| FROM users "é"', "é.name", 'SELECT "é".name FROM users "é"')
@@ -134,6 +150,17 @@ suggest(
 )
 conn = nil
 suggest("SELECT * FROM us|", nil)
+suggest("sel|", "SELECT", "SELECT")
+-- A SQL keyword popup also works before DBee has initialized its handler.
+local initialized_source = source
+local state = package.loaded["dbee.api.state"]
+package.loaded["dbee.api.state"] = { handler = function() error("DBee is not initialized") end }
+source = require("dbee.completion.blink").new()
+suggest("sel|", "SELECT", "SELECT")
+suggest("SELECT * FROM users wh|", "WHERE", "SELECT * FROM users WHERE")
+suggest("SELECT * FROM us|", nil)
+package.loaded["dbee.api.state"] = state
+source = initialized_source
 conn = { id = "test", type = "postgres" }
 local editor_completion = require("dbee.ui.editor.completion")
 vim.bo[buf].filetype = "sql"

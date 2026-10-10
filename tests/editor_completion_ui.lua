@@ -54,8 +54,33 @@ local function words()
   assert(info.selected == -1, "opening the popup selected and inserted a suggestion")
   return ret
 end
+local active_connection = conn
 local phases = {
   function()
+    conn = nil
+    input("isel")
+  end,
+  function()
+    assert(vim.fn.pumvisible() == 1 and words().SELECT, "SQL keyword prefix did not open the native popup")
+    assert(vim.api.nvim_get_current_line() == "sel", "keyword popup changed typed SQL")
+    input("<C-n><C-y>")
+  end,
+  function()
+    assert(vim.api.nvim_get_current_line() == "SELECT", "native keyword acceptance replaced the wrong range")
+    input(" * FROM users wh")
+  end,
+  function()
+    assert(vim.fn.pumvisible() == 1 and words().WHERE, "native keywords stopped after a table name")
+    input("<C-n><C-n><C-y>")
+  end,
+  function()
+    assert(vim.api.nvim_get_current_line() == "SELECT * FROM users WHERE", "native clause keyword was not accepted")
+    input("<Esc>")
+  end,
+  function()
+    conn = active_connection
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "" })
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
     input("iSELECT * FROM us")
   end,
   function()
@@ -105,6 +130,34 @@ local phases = {
     input("<C-e><Esc>")
   end,
   function()
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "SELECT id", "FROM public.users" })
+    vim.api.nvim_win_set_cursor(0, { 1, 8 })
+    input("A,")
+  end,
+  function()
+    assert(vim.fn.pumvisible() == 1 and words().name, "comma did not suggest columns")
+    input(" ")
+  end,
+  function()
+    assert(vim.fn.pumvisible() == 1 and words().name, "space after comma hid columns")
+    input("  ")
+  end,
+  function()
+    assert(vim.fn.pumvisible() == 1 and words().name, "multiple spaces after comma hid columns")
+    input("<CR>")
+  end,
+  function()
+    assert(vim.fn.pumvisible() == 1 and words().name, "newline after comma hid columns")
+    assert(vim.deep_equal(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), {
+      "SELECT id,   ", "", "FROM public.users",
+    }), "Enter accepted an unselected suggestion")
+    input("  ")
+  end,
+  function()
+    assert(vim.fn.pumvisible() == 1 and words().name, "indentation after comma hid columns")
+    input("<C-e><Esc>")
+  end,
+  function()
     require("dbee.ui.editor.completion").attach(bufnr, require("dbee.completion").new(handler), { auto = false })
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "SELECT * FROM " })
     vim.api.nvim_win_set_cursor(0, { 1, 13 })
@@ -134,7 +187,9 @@ local phases = {
       assert(autocmd.buffer ~= bufnr, "completion autocmd leaked")
     end
     vim.fn.delete(directory, "rf")
-    print("Editor completion UI: automatic popup, prefix refresh, acceptance, omnifunc, mapping, and cleanup passed")
+    print(
+      "Editor completion UI: keywords, automatic popup, prefix refresh, acceptance, omnifunc, mapping, and cleanup passed"
+    )
     vim.cmd("qa!")
   end,
 }

@@ -168,7 +168,7 @@ suggest('SELECT | FROM users "U" JOIN orders u ON true', { '"U".id', "u.id", "na
 suggest('WITH "People" AS (SELECT id FROM users) SELECT p.| FROM "People" p', { "p.id" })
 suggest('WITH "People" AS (SELECT id FROM users) SELECT p.| FROM people p', {})
 suggest("WITH People AS (SELECT id FROM users) SELECT p.| FROM people p", { "p.id" })
-suggest("SELECT * FROM public.users u|", {}, { "public.users", "name" })
+suggest("SELECT * FROM public.users u|", { "UNION", "USING" }, { "public.users", "name" })
 suggest("SELECT * FROM public.users AS |", {}, { "public.users", "name" })
 suggest("SELECT |\nFROM public.users u\nJOIN public.orders o ON u.id=o.user_id", { "u.id", "o.id", "name", "total" })
 
@@ -325,4 +325,38 @@ suggest("SELECT e.| FROM catalog.analytics.events e", { "e.event_id" }, nil, pro
 assert(reads == 4 and column_reads == 3, "synchronous refresh did not invalidate completion metadata")
 conn = nil
 suggest("SELECT * FROM |", {}, { "catalog.analytics.events" })
+
+-- Keywords do not depend on a parsed SELECT scope, a connection, or healthy metadata.
+suggest("|", { "SELECT", "WITH", "INSERT", "CREATE" }, { "WHERE" })
+suggest("sel|", { "SELECT" })
+suggest("SeL|", { "SELECT" })
+suggest("SELECT * FROM users;\nsel|", { "SELECT" })
+suggest("INSERT in|", { "INTO" })
+suggest("SELECT id fr| FROM users", { "FROM" })
+suggest("SELECT * FROM users wh|", { "WHERE" })
+suggest("SELECT * FROM users jo|", { "JOIN" })
+suggest("SELECT * FROM users ORDER b|", { "BY" })
+suggest("SELECT * FROM users WHERE id be|", { "BETWEEN" })
+suggest("-- sel|", {})
+suggest("/* sel| */", {})
+suggest("SELECT 'sel|", {})
+suggest("SELECT $$ sel| $$", {})
+suggest('SELECT "sel|', {})
+suggest("SELECT u.sel| FROM users u", {})
+suggest("SELECT * FROM public.sel|", {})
+suggest("SELECT id AS sel| FROM users", {})
+suggest("SELECT * FROM users u JOIN orders o USING (se|)", {})
+suggest("SELECT 12|", {})
+local keyword_start, keyword_items, keyword_query, keyword_cursor = suggest("\n  sel|", { "SELECT" })
+assert(keyword_start == 3)
+assert(keyword_items[1].kind == "k" and keyword_items[1].menu == "[SQL keyword]")
+assert(
+  keyword_query:sub(1, keyword_start) .. keyword_items[1].word .. keyword_query:sub(keyword_cursor) == "\n  SELECT"
+)
+conn = { id = "test", type = "postgres" }
+handler.connection_get_structure = function()
+  error("metadata unavailable")
+end
+suggest("SELECT fr|", { "FROM" })
+suggest("SELECT * FROM users wh|", { "WHERE" })
 print("Editor SQL completion: " .. checks .. " checks passed")

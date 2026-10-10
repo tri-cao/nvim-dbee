@@ -1,4 +1,9 @@
 local editor_completion = require("dbee.ui.editor.completion")
+local keyword_provider = {
+  complete = function(_, text, cursor)
+    return require("dbee.completion").complete(nil, text, cursor)
+  end,
+}
 local Source = {}
 Source.__index = Source
 local sql_filetypes = { sql = true, mysql = true, plsql = true }
@@ -12,7 +17,30 @@ function Source:enabled()
 end
 
 function Source:get_trigger_characters()
-  return { ".", "-", " ", ",", '"', "`", "[" }
+  return { ".", "-", " ", "\n", "\t", ",", '"', "`", "[" }
+end
+
+-- Run before Blink's Enter fallback to continue comma suggestions in SQL buffers.
+function Source.continue_after_comma(cmp)
+  local bufnr = vim.api.nvim_get_current_buf()
+  if not sql_filetypes[vim.bo.filetype] or cmp.get_selected_item() then
+    return false
+  end
+  local pos = vim.api.nvim_win_get_cursor(0)
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, pos[1], false)
+  lines[#lines] = lines[#lines]:sub(1, pos[2])
+  if table.concat(lines, "\n"):match(",%s*$") then
+    vim.schedule(function()
+      if
+        vim.api.nvim_get_current_buf() == bufnr
+        and sql_filetypes[vim.bo.filetype]
+        and vim.api.nvim_get_mode().mode:sub(1, 1) == "i"
+      then
+        cmp.show()
+      end
+    end)
+  end
+  return false
 end
 
 function Source:get_completions(ctx, callback)
@@ -27,28 +55,26 @@ function Source:get_completions(ctx, callback)
         self.provider = provider
       end
     end
-    if editor_completion.is_attached(ctx.bufnr) or self.provider then
-      local start, matches = editor_completion.get_completions(ctx.bufnr, ctx.cursor, self.provider)
-      local kinds = vim.lsp.protocol.CompletionItemKind
-      local kind = { m = kinds.Module, t = kinds.Class, c = kinds.Field }
-      for _, match in ipairs(matches) do
-        items[#items + 1] = {
-          label = match.abbr or match.word,
-          filterText = match.abbr or match.word,
-          labelDetails = { description = match.menu },
-          detail = match.menu,
-          documentation = match.info,
-          kind = kind[match.kind] or kinds.Text,
-          insertTextFormat = vim.lsp.protocol.InsertTextFormat.PlainText,
-          textEdit = {
-            newText = match.word,
-            range = {
-              start = { line = ctx.cursor[1] - 1, character = math.max(0, start) },
-              ["end"] = { line = ctx.cursor[1] - 1, character = ctx.cursor[2] },
-            },
+    local start, matches = editor_completion.get_completions(ctx.bufnr, ctx.cursor, self.provider or keyword_provider)
+    local kinds = vim.lsp.protocol.CompletionItemKind
+    local kind = { m = kinds.Module, t = kinds.Class, c = kinds.Field, k = kinds.Keyword }
+    for _, match in ipairs(matches) do
+      items[#items + 1] = {
+        label = match.abbr or match.word,
+        filterText = match.abbr or match.word,
+        labelDetails = { description = match.menu },
+        detail = match.menu,
+        documentation = match.info,
+        kind = kind[match.kind] or kinds.Text,
+        insertTextFormat = vim.lsp.protocol.InsertTextFormat.PlainText,
+        textEdit = {
+          newText = match.word,
+          range = {
+            start = { line = ctx.cursor[1] - 1, character = math.max(0, start) },
+            ["end"] = { line = ctx.cursor[1] - 1, character = ctx.cursor[2] },
           },
-        }
-      end
+        },
+      }
     end
   end
   -- The SQL engine filters by prefix and query scope, so refresh for both typing and deletion.

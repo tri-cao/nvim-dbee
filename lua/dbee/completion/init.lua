@@ -1,4 +1,5 @@
 local sql = require("dbee.completion.sql")
+local keywords = require("dbee.completion.keywords")
 local M = {}
 
 local table_types = {
@@ -286,15 +287,13 @@ end
 ---@return integer start zero-based byte offset
 ---@return table[] matches Vim complete-items
 function M.complete(handler, text, cursor, cache)
-  local conn = handler:get_current_connection()
+  local conn = handler and handler:get_current_connection()
   local parsed = sql.parse(text, cursor, conn and conn.type)
   local fragment = sql.fragment(parsed)
   local context = sql.context(parsed, fragment)
-  if not context then
-    return fragment.first - 1, {}
-  end
-  if not conn then
-    return fragment.first - 1, {}
+  local keyword_items = keywords.complete(parsed, fragment, context)
+  if not context or not conn then
+    return fragment.first - 1, keyword_items
   end
   local metadata = cache and cache[conn.id]
   local version = handler.connection_metadata_version and handler:connection_metadata_version(conn.id) or 0
@@ -312,7 +311,7 @@ function M.complete(handler, text, cursor, cache)
     end
   end
   if not ok then
-    return fragment.first - 1, {}
+    return fragment.first - 1, keyword_items
   end
   local items, seen = {}, {}
   local completed_identifier = false
@@ -478,6 +477,8 @@ function M.complete(handler, text, cursor, cache)
     end
     return a.word < b.word
   end)
+  -- Keep matching identifiers ahead of keywords when both share a prefix.
+  vim.list_extend(items, keyword_items)
   return fragment.first - 1, items
 end
 
