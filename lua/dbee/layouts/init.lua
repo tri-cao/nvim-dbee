@@ -116,8 +116,7 @@ function layouts.Default:configure_window_on_switch(on_switch, winid, open_fn, i
     window = winid,
     callback = function(event)
       if is_editor then
-        local note = api_ui.editor_search_note_with_buf(event.buf)
-          or api_ui.editor_search_note_with_file(event.file)
+        local note = api_ui.editor_search_note_with_buf(event.buf) or api_ui.editor_search_note_with_file(event.file)
         if note then
           api_ui.editor_set_current_note(note.id)
           return
@@ -135,6 +134,7 @@ function layouts.Default:configure_window_on_quit(winid)
   utils.create_singleton_autocmd({ "QuitPre" }, {
     window = winid,
     callback = function()
+      utils.save_sql_buffers()
       -- Let :quit finish before closing the rest of the tab, so it cannot
       -- accidentally quit the window we return to.
       local tabpage = self.tabpage
@@ -164,6 +164,20 @@ function layouts.Default:open()
   -- [No Name] buffer from :tabnew.
   vim.cmd("tab split")
   self.tabpage = vim.api.nvim_get_current_tabpage()
+  local tabpage = self.tabpage
+  vim.api.nvim_create_autocmd("TabClosed", {
+    callback = function()
+      if vim.api.nvim_tabpage_is_valid(tabpage) then
+        return
+      end
+      -- :tabclose bypasses close(), but scratchpads remain loaded in hidden buffers.
+      local ok, err = pcall(utils.save_sql_buffers)
+      if not ok then
+        utils.log("error", tostring(err))
+      end
+      return true
+    end,
+  })
 
   self.windows = {}
 
@@ -222,6 +236,7 @@ function layouts.Default:close()
     return
   end
 
+  utils.save_sql_buffers()
   local current_win = vim.api.nvim_get_current_win()
   local return_win = current_win
   if vim.api.nvim_get_current_tabpage() == self.tabpage then
@@ -235,7 +250,7 @@ function layouts.Default:close()
   end
 
   vim.api.nvim_set_current_tabpage(self.tabpage)
-  -- Keep unsaved notes in their buffers when hiding the UI.
+  -- Keep note buffers available for reopening after saving them.
   vim.cmd("hide tabclose")
   self.tabpage = nil
   self.previous_win = nil

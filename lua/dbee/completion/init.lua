@@ -177,8 +177,41 @@ local function raw_columns(handler, conn, metadata, entry)
   return metadata.columns[key]
 end
 
+local function get_metadata(handler, conn, cache)
+  local metadata = cache and cache[conn.id]
+  local version = handler.connection_metadata_version and handler:connection_metadata_version(conn.id) or 0
+  if metadata and metadata.version == version then
+    return metadata
+  end
+  local ok
+  ok, metadata = pcall(snapshot, handler, conn)
+  if not ok then
+    return nil
+  end
+  metadata.version = version
+  if cache then
+    cache[conn.id] = metadata
+  end
+  return metadata
+end
+
+local function source_matches(source, parts, quotes, conn)
+  local names = source.alias and { source.alias } or source.parts
+  local name_quotes = source.alias and { source.alias_quote or false } or source.quotes
+  if not names or #parts > #names then
+    return false
+  end
+  for i, part in ipairs(parts) do
+    local index = #names - #parts + i
+    if identifier_value(names[index], name_quotes[index], conn) ~= identifier_value(part, quotes[i], conn) then
+      return false
+    end
+  end
+  return true
+end
+
 -- Resolve physical sources, CTEs, and derived tables without crossing a query scope.
-local function resolver(handler, conn, metadata, parsed)
+local function resolver(handler, conn, metadata, parsed, strict)
   local source_columns, output_columns
   local resolving = {}
   source_columns = function(source, scope)
@@ -241,15 +274,30 @@ local function resolver(handler, conn, metadata, parsed)
         name, last = tokens[last].value, last - 1
         name_quote = tokens[last + 1].quote
       end
-      if tokens[last].value == "*" and (last == first or (last == first + 2 and tokens[first + 1].value == ".")) then
-        local qualifier = last > first and tokens[first].value:lower() or nil
+      if
+        tokens[last].kind == "symbol"
+        and tokens[last].value == "*"
+        and (last == first or (last == first + 2 and tokens[first + 1].value == "."))
+      then
+        local qualifier = last > first and { tokens[first].value } or nil
+        local quotes = { tokens[first].quote or false }
+        local matched = false
         for _, source in ipairs(scope.sources) do
-          local label = source.alias or (source.parts and source.parts[#source.parts])
-          if not qualifier or (label and label:lower() == qualifier) then
-            for _, column in ipairs(source_columns(source, scope)) do
+          if not qualifier or source_matches(source, qualifier, quotes, conn) then
+            matched = true
+            local resolved = source_columns(source, scope)
+            if strict and #resolved == 0 then
+              resolving[scope] = nil
+              return {}
+            end
+            for _, column in ipairs(resolved) do
               add(column)
             end
           end
+        end
+        if strict and not matched then
+          resolving[scope] = nil
+          return {}
         end
       else
         local simple = true
@@ -271,6 +319,10 @@ local function resolver(handler, conn, metadata, parsed)
             name = identifier_value(name, name_quote, conn)
           end
           add { name = name, type = "" }
+        elseif strict then
+          -- Unnamed expressions have adapter-specific output names; do not drop them.
+          resolving[scope] = nil
+          return {}
         end
       end
     end
@@ -299,22 +351,8 @@ function M.complete(handler, text, cursor, cache)
   if not context or not conn then
     return fragment.first - 1, keyword_items
   end
-  local metadata = cache and cache[conn.id]
-  local version = handler.connection_metadata_version and handler:connection_metadata_version(conn.id) or 0
-  if metadata and metadata.version ~= version then
-    metadata = nil
-  end
-  local ok = true
+  local metadata = get_metadata(handler, conn, cache)
   if not metadata then
-    ok, metadata = pcall(snapshot, handler, conn)
-    if ok then
-      metadata.version = version
-    end
-    if ok and cache then
-      cache[conn.id] = metadata
-    end
-  end
-  if not ok then
     return fragment.first - 1, keyword_items
   end
   local items, seen, name_prefixes = {}, {}, {}
@@ -503,6 +541,90 @@ function M.complete(handler, text, cursor, cache)
   return fragment.first - 1, items
 end
 
+---Expand SELECT wildcards in the query scope at the cursor, in source/column order.
+---@return table[]? edits zero-based byte ranges with an exclusive finish
+---@return string? error
+function M.expand_star(handler, text, cursor, cache)
+  local conn = handler:get_current_connection()
+  if not conn then
+    return nil, "Select a connection before expanding *"
+  end
+  local parsed = sql.parse(text, cursor, conn.type)
+  local scope = parsed.scope
+  if parsed.suppressed or not scope or scope.command ~= "select" then
+    return {}
+  end
+  local wildcards = {}
+  for _, projection in ipairs(scope.projections) do
+    local first, last = projection.first, projection.last
+    local token = parsed.tokens[last]
+    if token.kind == "symbol" and token.value == "*" then
+      local parts, quotes, valid = {}, {}, true
+      if last > first then
+        valid = (last - first) % 2 == 0
+        for i = first, last - 1 do
+          local part = parsed.tokens[i]
+          if (i - first) % 2 == 0 then
+            valid = valid and sql.identifier(part)
+            parts[#parts + 1], quotes[#quotes + 1] = part.value, part.quote or false
+          else
+            valid = valid and part.kind == "symbol" and part.value == "."
+          end
+        end
+      end
+      if valid then
+        wildcards[#wildcards + 1] =
+          { first = parsed.tokens[first].first - 1, finish = token.last, parts = parts, quotes = quotes }
+      end
+    end
+  end
+  if #wildcards == 0 then
+    return {}
+  end
+  local metadata = get_metadata(handler, conn, cache)
+  if not metadata then
+    return nil, "Table metadata is unavailable; refresh the connection and try again"
+  end
+  local source_columns = resolver(handler, conn, metadata, parsed, true)
+  local edits = {}
+  for _, wildcard in ipairs(wildcards) do
+    local sources = {}
+    for _, source in ipairs(scope.sources) do
+      if #wildcard.parts == 0 or source_matches(source, wildcard.parts, wildcard.quotes, conn) then
+        sources[#sources + 1] = source
+      end
+    end
+    if #sources == 0 or (#wildcard.parts > 0 and #sources ~= 1) then
+      return nil, "Cannot resolve the table or alias for *"
+    end
+    local words = {}
+    for _, source in ipairs(sources) do
+      local columns = source_columns(source, scope)
+      if #columns == 0 then
+        return nil, "Cannot resolve all columns for *; refresh the connection metadata"
+      end
+      for _, column in ipairs(columns) do
+        local parts, quotes = {}, nil
+        if #wildcard.parts > 0 then
+          parts, quotes = vim.deepcopy(wildcard.parts), wildcard.quotes
+        elseif #scope.sources > 1 then
+          if source.alias then
+            parts, quotes = { source.alias }, { source.alias_quote or false }
+          elseif source.parts then
+            parts, quotes = vim.deepcopy(source.parts), source.quotes
+          else
+            return nil, "A joined subquery needs an alias to expand *"
+          end
+        end
+        parts[#parts + 1] = column.name
+        words[#words + 1] = render(parts, conn, nil, quotes)
+      end
+    end
+    edits[#edits + 1] = { first = wildcard.first, finish = wildcard.finish, text = table.concat(words, ", ") }
+  end
+  return edits
+end
+
 function M.new(handler)
   local cache = {}
   handler:register_event_listener("metadata_refresh_state_changed", function(data)
@@ -520,6 +642,9 @@ function M.new(handler)
   return {
     complete = function(_, text, cursor)
       return M.complete(handler, text, cursor, cache)
+    end,
+    expand_star = function(_, text, cursor)
+      return M.expand_star(handler, text, cursor, cache)
     end,
   }
 end

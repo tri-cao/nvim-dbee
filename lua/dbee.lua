@@ -46,11 +46,12 @@ function dbee.open()
   api.current_config().window_layout:open()
 end
 
----Close dbee UI.
+---Save modified SQL files and scratchpads, then close dbee UI.
 function dbee.close()
   if not api.current_config().window_layout:is_open() then
     return
   end
+  require("dbee.utils").save_sql_buffers()
   api.current_config().window_layout:close()
 end
 

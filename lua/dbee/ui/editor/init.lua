@@ -3,6 +3,7 @@ local common = require("dbee.ui.common")
 local welcome = require("dbee.ui.editor.welcome")
 local completion = require("dbee.ui.editor.completion")
 local query_status_ns = vim.api.nvim_create_namespace("dbee_query_status")
+local expand_star_ns = vim.api.nvim_create_namespace("dbee_expand_star")
 
 local function query_status_highlights()
   vim.api.nvim_set_hl(0, "DbeeQuerySuccess", { fg = "#22c55e", default = true })
@@ -75,6 +76,12 @@ function EditorUI:new(handler, result, opts)
   query_status_highlights()
   handler:register_event_listener("call_state_changed", function(data)
     o:on_query_state_changed(data.call)
+  end)
+  handler:register_event_listener("connection_added", function(data)
+    local ok, conn = pcall(handler.connection_get_params, handler, data.conn_id)
+    if ok and conn then
+      o:ensure_connection_scratchpad(data.conn_id)
+    end
   end)
 
   -- set the current note as first note from global namespace
@@ -199,6 +206,9 @@ end
 function EditorUI:get_actions()
   return {
     complete = completion.trigger,
+    expand_star = function()
+      self:expand_star()
+    end,
     prev_note = function()
       self:cycle_note(-vim.v.count1)
     end,
@@ -249,6 +259,49 @@ function EditorUI:get_actions()
       end
     end,
   }
+end
+
+---Replace wildcards in the SELECT scope at the cursor using connection metadata.
+function EditorUI:expand_star()
+  local bufnr = vim.api.nvim_get_current_buf()
+  if vim.bo[bufnr].filetype ~= "sql" or not vim.bo[bufnr].modifiable then
+    return
+  end
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  local pos = vim.api.nvim_win_get_cursor(0)
+  local offset = 0
+  for row = 1, pos[1] - 1 do
+    offset = offset + #lines[row] + 1
+  end
+  local edits, err = self.completion:expand_star(table.concat(lines, "\n"), offset + pos[2] + 1)
+  if not edits then
+    vim.notify(err, vim.log.levels.WARN, { title = "dbee" })
+    return
+  end
+  if #edits == 0 then
+    return
+  end
+  local function position(byte)
+    for row, line in ipairs(lines) do
+      if byte <= #line then
+        return row - 1, byte
+      end
+      byte = byte - #line - 1
+    end
+  end
+  local mark = vim.api.nvim_buf_set_extmark(bufnr, expand_star_ns, pos[1] - 1, pos[2], { right_gravity = true })
+  for i = #edits, 1, -1 do
+    local edit = edits[i]
+    local srow, scol = position(edit.first)
+    local erow, ecol = position(edit.finish)
+    if i < #edits then
+      vim.cmd("undojoin")
+    end
+    vim.api.nvim_buf_set_text(bufnr, srow, scol, erow, ecol, { edit.text })
+  end
+  local restored = vim.api.nvim_buf_get_extmark_by_id(bufnr, expand_star_ns, mark, {})
+  vim.api.nvim_buf_del_extmark(bufnr, expand_star_ns, mark)
+  vim.api.nvim_win_set_cursor(0, { restored[1] + 1, restored[2] })
 end
 
 ---Triggers an in-built action.
@@ -547,9 +600,10 @@ function EditorUI:cycle_note(direction)
   self:set_current_note(notes[(index - 1 + direction) % #notes + 1].id)
 end
 
----Opens the dedicated scratchpad for a connection and focuses the editor.
+---Create a persistent scratchpad for a connection, reusing any existing note.
 ---@param conn_id connection_id
-function EditorUI:open_connection_scratchpad(conn_id)
+---@return note_id
+function EditorUI:ensure_connection_scratchpad(conn_id)
   local conn = self.handler:connection_get_params(conn_id)
   if not conn then
     error("invalid connection id")
@@ -564,12 +618,30 @@ function EditorUI:open_connection_scratchpad(conn_id)
   local note_id
   for _, note in ipairs(self:namespace_get_notes(conn_id)) do
     if note.name == name then
-      note_id = note.id
-      break
+      return note.id
     end
   end
-  note_id = note_id or self:namespace_create_note(conn_id, name)
-  self:set_current_note(note_id)
+  note_id = self:namespace_create_note(conn_id, name)
+  local note = self:search_note(note_id)
+  if vim.fn.filereadable(note.file) == 0 and vim.fn.writefile({}, note.file) ~= 0 then
+    error("could not create connection scratchpad: " .. note.file)
+  end
+  return note_id
+end
+
+---Ensure connections loaded before the editor was initialized also have scratchpads.
+function EditorUI:ensure_connection_scratchpads()
+  for _, source in ipairs(self.handler:get_sources()) do
+    for _, conn in ipairs(self.handler:source_get_connections(source:name())) do
+      self:ensure_connection_scratchpad(conn.id)
+    end
+  end
+end
+
+---Opens the dedicated scratchpad for a connection and focuses the editor.
+---@param conn_id connection_id
+function EditorUI:open_connection_scratchpad(conn_id)
+  self:set_current_note(self:ensure_connection_scratchpad(conn_id))
 end
 
 ---Appends a query to a connection's scratchpad and focuses it for editing.

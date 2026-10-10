@@ -205,7 +205,9 @@ Use `:Dbee search users` or `require("dbee").search("users")` to start with a se
 
 By default, DBee opens its editor, results, drawer, and call log as windows in a dedicated tab.
 Calling `open()` again focuses that tab and resets the pane sizes. Closing DBee returns to the
-previous window and preserves unsaved notes in their buffers.
+previous window and saves modified SQL files and scratchpads, including hidden buffers.
+Unnamed buffers are kept in memory. If saving fails, `close()` reports the error and keeps the UI open.
+Closing its tab directly also saves loaded SQL buffers and reports any save errors.
 With bufferline.nvim active, the bufferline starts after the drawer and follows its width when resized.
 Inside DBee, `[b` and `]b` cycle through open scratchpads, skipping unrelated buffers and focusing
 the editor. Selecting a connection's scratchpad also activates that connection.
@@ -241,6 +243,8 @@ Here are a few steps to quickly get started:
   - Connections:
 
     - Press `a` on a source or one of its descendants to add a connection (if supported).
+      Each connection automatically gets its own persistent `<connection name>.sql` scratchpad.
+      Existing scratchpad contents are preserved, including when sources are reloaded.
     - Press `e` on a connection node to edit its source file (if supported). This key does not
       apply to the connection's schema, table, or column nodes.
     - Press `cw` to edit the connection

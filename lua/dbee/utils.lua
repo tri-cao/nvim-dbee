@@ -75,6 +75,34 @@ function M.sorted_keys(obj)
   return keys
 end
 
+---Save modified SQL files and scratchpads, including hidden buffers.
+---Unnamed and special buffers have no file destination and are left untouched.
+function M.save_sql_buffers()
+  local sql_filetypes = { sql = true, mysql = true, plsql = true }
+  local errors = {}
+  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_valid(bufnr) and vim.api.nvim_buf_is_loaded(bufnr) then
+      local name = vim.api.nvim_buf_get_name(bufnr)
+      if
+        name ~= ""
+        and vim.bo[bufnr].buftype == ""
+        and vim.bo[bufnr].modified
+        and (sql_filetypes[vim.bo[bufnr].filetype] or name:lower():sub(-4) == ".sql")
+      then
+        local ok, err = pcall(vim.api.nvim_buf_call, bufnr, function()
+          vim.cmd("silent update")
+        end)
+        if not ok then
+          errors[#errors + 1] = name .. ": " .. tostring(err)
+        end
+      end
+    end
+  end
+  if #errors > 0 then
+    error("DBee could not save SQL buffers:\n" .. table.concat(errors, "\n"), 0)
+  end
+end
+
 -- create an autocmd that is associated with a window rather than a buffer.
 ---@param events string[]
 ---@param winid integer

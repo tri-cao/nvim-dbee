@@ -26,6 +26,11 @@ jobs:
         version: [v0.10.4, stable]
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout nui.nvim for drawer tests
+        uses: actions/checkout@v4
+        with:
+          repository: MunifTanjim/nui.nvim
+          path: .test-deps/nui.nvim
       - uses: rhysd/action-setup-vim@v1
         with:
           neovim: true
@@ -33,6 +38,23 @@ jobs:
       - name: SQL completion regression tests
         working-directory: .
         run: nvim --headless -n -u NONE -i NONE -l tests/editor_completion.lua
+      - name: SQL autosave regression tests
+        working-directory: .
+        run: nvim --headless -n -u NONE -i NONE -l tests/editor_autosave.lua
+      - name: Scratchpad persistence regression tests
+        working-directory: .
+        run: nvim --headless -n -u NONE -i NONE -l tests/editor_scratchpad.lua
+      - name: Connection creation regression tests
+        working-directory: .
+        env:
+          NUI_RTP: ${{ github.workspace }}/.test-deps/nui.nvim
+        run: nvim --headless -n -u NONE -i NONE -l tests/connection_scratchpad.lua
+      - name: SQL wildcard expansion regression tests
+        working-directory: .
+        run: nvim --headless -n -u NONE -i NONE -l tests/editor_expand_star.lua
+      - name: Wildcard expansion keybinding smoke test
+        working-directory: .
+        run: nvim --headless -n -u NONE -i NONE -c 'luafile tests/editor_expand_star_ui.lua'
       - name: Completion popup smoke test
         working-directory: .
         run: nvim --headless -n -u NONE -i NONE -c 'luafile tests/editor_completion_ui.lua'

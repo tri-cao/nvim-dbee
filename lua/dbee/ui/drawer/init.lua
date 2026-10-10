@@ -130,6 +130,9 @@ function DrawerUI:new(handler, editor, result, opts, progress_opts)
   editor:register_event_listener("current_note_changed", function(data)
     o:on_current_note_changed(data)
   end)
+  editor:register_event_listener("note_created", function()
+    o:refresh()
+  end)
 
   return o
 end
@@ -515,9 +518,11 @@ function DrawerUI:refresh()
   -- assemble tree layout
   ---@type DrawerUINode[]
   local nodes = {}
-  for _, ly in ipairs(convert.handler_nodes(self.handler, function(conn)
-    return self:load_connection_nodes(conn)
-  end)) do
+  for _, ly in
+    ipairs(convert.handler_nodes(self.handler, function(conn)
+      return self:load_connection_nodes(conn)
+    end))
+  do
     table.insert(nodes, ly)
   end
   table.insert(nodes, convert.separator_node())

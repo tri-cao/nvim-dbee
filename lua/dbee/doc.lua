@@ -109,6 +109,7 @@
 ---Avaliable core events.
 ---@alias core_event_name
 ---| '"call_state_changed"' {call}
+---| '"connection_added"' {conn_id}
 ---| '"current_connection_changed"' {conn_id}
 ---| '"database_selected"' {conn_id, database_name}
 ---| '"metadata_refresh_state_changed"' {conn_id, node_id, refreshing, error}

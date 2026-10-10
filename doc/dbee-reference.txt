@@ -31,7 +31,9 @@ dbee.open()                                                          *dbee.open*
 
 
 dbee.close()                                                        *dbee.close*
-    Close dbee UI.
+    Save modified SQL files and scratchpads, including hidden buffers, then
+    close dbee UI. Unnamed buffers are kept in memory. A save error leaves
+    the UI open.
 
 
 dbee.is_open()                                                    *dbee.is_open*
@@ -123,7 +125,7 @@ key_mapping                                                        *key_mapping*
     Keymap options.
 
     Type: ~
-        {key:string,mode:string,opts:table,action:string|fun()}
+        {key:string,mode:string|string[],opts:table,action:string|fun()}
 
 
 ------------------------------------------------------------------------------
@@ -311,6 +313,7 @@ core_event_name                                                *core_event_name*
 
     Variants: ~
         ("call_state_changed")
+        ("connection_added") {conn_id}
 
 
 editor_event_name                                            *editor_event_name*

@@ -20,7 +20,7 @@ local config = {}
 ---@field text_highlight string
 
 ---Keymap options.
----@alias key_mapping { key: string, mode: string, opts: table, action: string|fun() }
+---@alias key_mapping { key: string, mode: string|string[], opts: table, action: string|fun() }
 
 ---@divider -
 
@@ -336,6 +336,7 @@ config.default = {
     -- mappings for the buffer
     mappings = {
       { key = "<C-Space>", mode = "i", action = "complete", opts = { desc = "Complete SQL" } },
+      { key = "<C-S-m>", mode = { "n", "i" }, action = "expand_star", opts = { desc = "Expand SQL *" } },
       -- cycle only through open scratchpads
       { key = "[b", mode = "n", action = "prev_note", opts = { desc = "Previous scratchpad" } },
       { key = "]b", mode = "n", action = "next_note", opts = { desc = "Next scratchpad" } },

@@ -377,6 +377,7 @@ Here are the defaults:
         -- mappings for the buffer
         mappings = {
           { key = "<C-Space>", mode = "i", action = "complete" },
+          { key = "<C-S-m>", mode = { "n", "i" }, action = "expand_star" },
           -- run what's currently selected on the active connection
           { key = "BB", mode = "v", action = "run_selection" },
           -- run the whole file on the active connection
@@ -478,6 +479,11 @@ Call the `setup()` function with an optional config parameter.
 
 The same functions are also available through the `:Dbee` user command.
 
+Closing DBee saves modified SQL files and scratchpads, including hidden buffers.
+Unnamed buffers are kept in memory. If saving fails, close() reports the error
+and keeps the UI open. Closing its tab directly also saves loaded SQL buffers
+and reports any save errors.
+
 With snacks.nvim installed and its picker enabled, press `/` in the drawer or
 run `:Dbee search` to search all configured connections, schemas, BigQuery
 datasets, and tables, including collapsed nodes. Type to filter the results.
@@ -507,6 +513,8 @@ Here are a few steps to quickly get started:
             Press `q`, `<Esc>`, or `?` to close it.
     - Connections:
         - Press `a` on a source or one of its descendants to add a connection (if supported).
+            Each connection automatically gets its own persistent `<connection name>.sql`
+            scratchpad. Existing contents are preserved when sources are reloaded.
         - Press `e` on a connection node to edit its source file (if supported).
             This key does not apply to schema, table, or column nodes below it.
         - Press `cw` to edit the connection
@@ -684,6 +692,14 @@ are qualified. Comments and string literals do not trigger suggestions.
 In insert mode, press <C-Space> or <C-x><C-o> to request suggestions manually.
 Use <C-n>/<C-p> to select, <C-y> to accept, and <C-e> to dismiss. Opening the
 popup preserves your text. No extra completion plugin is required.
+
+Press <C-S-m> (Ctrl+Shift+M) in normal or insert mode to expand SELECT wildcards
+in the query scope at the cursor. A single-table * becomes its column list;
+with JOINs it becomes columns from every FROM/JOIN source, in source order,
+qualified by alias or table name. t.* expands only t, retaining its qualifier.
+CTEs and subqueries use their output columns. COUNT(*) and multiplication are
+unchanged. Expansion uses the active connection's cached metadata and is undone
+as one edit. The editor mapping action is expand_star.
 
 Configure completion in setup:
 >lua

@@ -68,7 +68,9 @@ function Handler:source_reload(id)
   end
 
   -- close old connections
+  local previous_connections = {}
   for _, c in ipairs(self:source_get_connections(id)) do
+    previous_connections[c.id] = true
     pcall(vim.fn.DbeeDeleteConnection, c.id)
   end
 
@@ -83,6 +85,9 @@ function Handler:source_reload(id)
 
     local conn_id = vim.fn.DbeeCreateConnection(spec)
     table.insert(self.source_conn_lookup[id], conn_id)
+    if not previous_connections[conn_id] then
+      event_bus.trigger("connection_added", { conn_id = conn_id })
+    end
   end
 end
 
