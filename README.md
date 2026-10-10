@@ -298,6 +298,11 @@ Here are a few steps to quickly get started:
 - Column names stay pinned at the top when scrolling results and follow horizontal scrolling.
   Set `result.pin_header = false` to disable this. Pinning requires `wrap = false` (the default).
 
+- In the "result" buffer, press `>` in normal mode to show the current row as JSON in
+  a split to the right, 50 columns wide. The new buffer has filetype `json`.
+  In visual mode, `>` shows the full value of the column under the cursor;
+  `v>` inspects a cell without selecting its text. Strings containing JSON are formatted as JSON.
+
 - Once in the "result" buffer, you can yank the results with the following keys:
 
   - `yaj` yank current row as json (or row range in visual mode)

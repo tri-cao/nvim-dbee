@@ -13,6 +13,8 @@ local action_descriptions = {
   page_prev = "Previous result page",
   page_last = "Last result page",
   page_first = "First result page",
+  show_current_json = "Show current row as JSON in a split",
+  show_current_cell_json = "Show current cell value as JSON in a split",
   yank_current_json = "Copy current row as JSON",
   yank_selection_json = "Copy selected rows as JSON",
   yank_all_json = "Copy all rows as JSON",
@@ -329,6 +331,12 @@ function ResultUI:get_actions()
     page_first = function()
       self:page_first()
     end,
+    show_current_json = function()
+      self:show_current_json()
+    end,
+    show_current_cell_json = function()
+      self:show_current_json(true)
+    end,
 
     -- yank functions
     yank_current_json = function()
@@ -405,6 +413,79 @@ end
 
 function ResultUI:page_first()
   self.page_index = self:display_result(0)
+end
+
+---Shows the current row as JSON in a 50-column split to the right.
+---@private
+---@param cell? boolean show only the current column value
+function ResultUI:show_current_json(cell)
+  if not self:has_window() or not self.current_call then
+    return
+  end
+  local state = self.current_call.state
+  if state ~= "archived" and state ~= "archive_failed" then
+    return
+  end
+
+  local column
+  if cell then
+    column = require("dbee.ui.result.cell_json").column_at_cursor(self.winid, self.bufnr)
+    if not column then
+      return
+    end
+    -- Keep the cursor position, but leave Visual mode before entering the split.
+    vim.cmd("normal! " .. vim.api.nvim_replace_termcodes("<Esc>", true, false, true))
+  end
+  local index = tonumber(vim.api.nvim_win_call(self.winid, function()
+    return self:current_row_index()
+  end)) - 1
+  local bufnr = common.create_blank_buffer("dbee-row-" .. (index + 1) .. ".json", {
+    bufhidden = "wipe",
+    modifiable = false,
+    filetype = "json",
+  })
+  local ok, err = pcall(function()
+    self.handler:call_store_result(self.current_call.id, "json", "buffer", {
+      from = index,
+      to = index + 1,
+      extra_arg = bufnr,
+    })
+    if column then
+      local lines = require("dbee.ui.result.cell_json").value_lines(
+        vim.api.nvim_buf_get_lines(bufnr, 0, -1, false),
+        column
+      )
+      vim.bo[bufnr].modifiable = true
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+      vim.bo[bufnr].modifiable = false
+    end
+  end)
+  if not ok then
+    vim.api.nvim_buf_delete(bufnr, { force = true })
+    error(err)
+  end
+  vim.bo[bufnr].modified = false
+
+  vim.api.nvim_set_current_win(self.winid)
+  -- Let the JSON split take space from the result rather than fixed side panes.
+  local winfixwidth = vim.wo[self.winid].winfixwidth
+  vim.wo[self.winid].winfixwidth = false
+  local split_ok, split_err = pcall(vim.cmd, "rightbelow 50vsplit")
+  vim.wo[self.winid].winfixwidth = winfixwidth
+  if not split_ok then
+    vim.api.nvim_buf_delete(bufnr, { force = true })
+    error(split_err)
+  end
+  local winid = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(winid, bufnr)
+  common.configure_window_options(winid, {
+    winbar = "Row " .. (index + 1) .. (column and " / " .. column.name:gsub("%%", "%%%%") or "") .. " (JSON)",
+    winfixwidth = true,
+    number = false,
+    relativenumber = false,
+    spell = false,
+    wrap = false,
+  })
 end
 
 -- wrapper for storing the current row

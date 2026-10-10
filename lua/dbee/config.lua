@@ -299,6 +299,9 @@ config.default = {
       { key = "H", mode = "", action = "page_prev" },
       { key = "E", mode = "", action = "page_last" },
       { key = "F", mode = "", action = "page_first" },
+      -- inspect the current row in a JSON split
+      { key = ">", mode = "n", action = "show_current_json" },
+      { key = ">", mode = "x", action = "show_current_cell_json" },
       -- yank rows as csv/json
       { key = "yaj", mode = "n", action = "yank_current_json" },
       { key = "yaj", mode = "v", action = "yank_selection_json" },

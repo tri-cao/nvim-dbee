@@ -344,6 +344,9 @@ Here are the defaults:
           { key = "H", mode = "", action = "page_prev" },
           { key = "E", mode = "", action = "page_last" },
           { key = "F", mode = "", action = "page_first" },
+          -- inspect the current row in a JSON split
+          { key = ">", mode = "n", action = "show_current_json" },
+          { key = ">", mode = "x", action = "show_current_cell_json" },
           -- yank rows as csv/json
           { key = "yaj", mode = "n", action = "yank_current_json" },
           { key = "yaj", mode = "v", action = "yank_selection_json" },
@@ -551,6 +554,11 @@ Here are a few steps to quickly get started:
   require("dbee").api.ui.result_page_first()     Go to the               F
                                                 first page   
   -------------------------------------------------------------------------------------
+- In the "result" buffer, press `>` in normal mode to show the current row as JSON
+    in a split to the right, 50 columns wide. The new buffer has filetype `json`.
+    In visual mode, `>` shows the full value of the column under the cursor;
+    `v>` inspects a cell without selecting its text. Strings containing JSON are
+    formatted as JSON.
 - Once in the "result" buffer, you can yank the results with the following keys:
     - `yaj` yank current row as json (or row range in visual mode)
     - `yac` yank current row as CSV (or row range in visual mode)
