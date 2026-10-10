@@ -110,7 +110,6 @@ func (c *Connection) GetParams() *ConnectionParams {
 }
 
 func (c *Connection) Execute(query string, onEvent func(CallState, *Call)) *Call {
-	query = withDefaultQueryLimit(query, c.GetType())
 	exec := func(ctx context.Context) (ResultStream, error) {
 		if strings.TrimSpace(query) == "" {
 			return nil, errors.New("empty query")
