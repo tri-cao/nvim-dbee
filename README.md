@@ -207,6 +207,9 @@ Use `:Dbee search users` or `require("dbee").search("users")` to start with a se
 By default, DBee opens its editor, results, drawer, and call log as windows in a dedicated tab.
 Calling `open()` again focuses that tab and resets the pane sizes. Closing DBee returns to the
 previous window and preserves unsaved notes in their buffers.
+With bufferline.nvim active, the bufferline starts after the drawer and follows its width when resized.
+Inside DBee, `[b` and `]b` cycle through open scratchpads, skipping unrelated buffers and focusing
+the editor. Selecting a connection's scratchpad also activates that connection.
 
 <!-- DOCGEN_IGNORE_START -->
 

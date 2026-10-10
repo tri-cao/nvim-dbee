@@ -105,6 +105,12 @@ end
 ---@return table<string, fun()>
 function EditorUI:get_actions()
   return {
+    prev_note = function()
+      self:cycle_note(-vim.v.count1)
+    end,
+    next_note = function()
+      self:cycle_note(vim.v.count1)
+    end,
     run_file = function()
       if not self.winid or not vim.api.nvim_win_is_valid(self.winid) then
         return
@@ -406,6 +412,32 @@ function EditorUI:get_current_note()
   return note
 end
 
+---Cycle through open, listed scratchpads without visiting unrelated buffers.
+---@param direction integer
+function EditorUI:cycle_note(direction)
+  local notes = {}
+  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_loaded(bufnr) and vim.bo[bufnr].buflisted then
+      local note = self:search_note_with_buf(bufnr)
+      if note then
+        table.insert(notes, note)
+      end
+    end
+  end
+  if #notes == 0 then
+    return
+  end
+
+  local index = direction < 0 and 1 or 0
+  for i, note in ipairs(notes) do
+    if note.id == self.current_note_id then
+      index = i
+      break
+    end
+  end
+  self:set_current_note(notes[(index - 1 + direction) % #notes + 1].id)
+end
+
 ---Opens the dedicated scratchpad for a connection and focuses the editor.
 ---@param conn_id connection_id
 function EditorUI:open_connection_scratchpad(conn_id)
@@ -428,7 +460,6 @@ function EditorUI:open_connection_scratchpad(conn_id)
     end
   end
   note_id = note_id or self:namespace_create_note(conn_id, name)
-  self.handler:set_current_connection(conn_id)
   self:set_current_note(note_id)
 end
 
@@ -436,14 +467,17 @@ end
 -- and opens it in the window
 ---@param id note_id
 function EditorUI:set_current_note(id)
+  local note, namespace = self:search_note(id)
+  if not note then
+    error("invalid note set as current")
+  end
+  if namespace ~= "global" then
+    self.handler:set_current_connection(namespace)
+  end
+
   if id and self.current_note_id == id then
     self:display_note(id)
     return
-  end
-
-  local note, _ = self:search_note(id)
-  if not note then
-    error("invalid note set as current")
   end
 
   self.current_note_id = id

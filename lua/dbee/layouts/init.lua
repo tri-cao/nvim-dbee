@@ -1,6 +1,30 @@
 local utils = require("dbee.utils")
 local api_ui = require("dbee.api.ui")
 
+local function configure_bufferline(drawer_win)
+  local config = package.loaded["bufferline.config"]
+  if not config or not config.options then
+    return
+  end
+
+  local filetype = vim.bo[vim.api.nvim_win_get_buf(drawer_win)].filetype
+  local function add_offset(options)
+    options.offsets = options.offsets or {}
+    for _, offset in ipairs(options.offsets) do
+      if offset.filetype == filetype then
+        return
+      end
+    end
+    -- Include the vertical separator so buffers line up with the editor.
+    table.insert(options.offsets, { filetype = filetype, text = "", highlight = "BufferLineFill", padding = 1 })
+  end
+
+  add_offset(config.options)
+  -- Bufferline rebuilds its options from the user config on ColorScheme.
+  config.user.options = config.user.options or {}
+  add_offset(config.user.options)
+end
+
 ---@mod dbee.ref.layout UI Layout
 ---@brief [[
 ---Defines the layout of UI windows.
@@ -78,18 +102,6 @@ function layouts.Default:configure_window_on_switch(on_switch, winid, open_fn, i
   local action
   if on_switch == "close" then
     action = function(_, buf, file)
-      if is_editor then
-        local note, _ = api_ui.editor_search_note_with_file(file)
-        if note then
-          -- do nothing
-          return
-        end
-        note, _ = api_ui.editor_search_note_with_buf(buf)
-        if note then
-          -- do nothing
-          return
-        end
-      end
       -- close dbee and open buffer
       self:close()
       vim.api.nvim_win_set_buf(0, buf)
@@ -103,6 +115,14 @@ function layouts.Default:configure_window_on_switch(on_switch, winid, open_fn, i
   utils.create_singleton_autocmd({ "BufWinEnter", "BufReadPost", "BufNewFile" }, {
     window = winid,
     callback = function(event)
+      if is_editor then
+        local note = api_ui.editor_search_note_with_buf(event.buf)
+          or api_ui.editor_search_note_with_file(event.file)
+        if note then
+          api_ui.editor_set_current_note(note.id)
+          return
+        end
+      end
       action(winid, event.buf, event.file)
     end,
   })
@@ -179,6 +199,7 @@ function layouts.Default:open()
   self:configure_window_on_quit(win)
 
   -- set cursor to editor
+  configure_bufferline(self.windows["drawer"])
   vim.api.nvim_set_current_win(editor_win)
 end
 
@@ -188,6 +209,7 @@ function layouts.Default:reset()
   vim.api.nvim_win_set_height(self.windows["result"], self.result_height)
   vim.api.nvim_win_set_width(self.windows["drawer"], self.drawer_width)
   vim.api.nvim_win_set_height(self.windows["call_log"], self.call_log_height)
+  configure_bufferline(self.windows["drawer"])
   vim.api.nvim_set_current_win(self.windows["editor"])
 end
 

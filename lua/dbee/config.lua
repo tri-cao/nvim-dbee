@@ -79,6 +79,23 @@ config.default = {
     mappings = {
       -- show all drawer keybindings in a popup
       { key = "?", mode = "n", action = "show_help" },
+      -- cycle only through open scratchpads
+      {
+        key = "[b",
+        mode = "n",
+        action = function()
+          require("dbee.api.ui").editor_do_action("prev_note")
+        end,
+        opts = { desc = "Previous scratchpad" },
+      },
+      {
+        key = "]b",
+        mode = "n",
+        action = function()
+          require("dbee.api.ui").editor_do_action("next_note")
+        end,
+        opts = { desc = "Next scratchpad" },
+      },
       -- search all connections, schemas, datasets, and tables with Snacks picker
       { key = "/", mode = "n", action = "search" },
       -- add a connection to the selected source
@@ -249,6 +266,23 @@ config.default = {
 
     -- mappings for the buffer
     mappings = {
+      -- cycle only through open scratchpads
+      {
+        key = "[b",
+        mode = "n",
+        action = function()
+          require("dbee.api.ui").editor_do_action("prev_note")
+        end,
+        opts = { desc = "Previous scratchpad" },
+      },
+      {
+        key = "]b",
+        mode = "n",
+        action = function()
+          require("dbee.api.ui").editor_do_action("next_note")
+        end,
+        opts = { desc = "Next scratchpad" },
+      },
       -- move between words without leaving the current result row
       { key = "w", mode = "n", action = "word_next" },
       { key = "b", mode = "n", action = "word_prev" },
@@ -287,6 +321,9 @@ config.default = {
 
     -- mappings for the buffer
     mappings = {
+      -- cycle only through open scratchpads
+      { key = "[b", mode = "n", action = "prev_note", opts = { desc = "Previous scratchpad" } },
+      { key = "]b", mode = "n", action = "next_note", opts = { desc = "Next scratchpad" } },
       -- run what's currently selected on the active connection
       { key = "BB", mode = "v", action = "run_selection" },
       -- run the whole file on the active connection
@@ -304,6 +341,23 @@ config.default = {
 
     -- mappings for the buffer
     mappings = {
+      -- cycle only through open scratchpads
+      {
+        key = "[b",
+        mode = "n",
+        action = function()
+          require("dbee.api.ui").editor_do_action("prev_note")
+        end,
+        opts = { desc = "Previous scratchpad" },
+      },
+      {
+        key = "]b",
+        mode = "n",
+        action = function()
+          require("dbee.api.ui").editor_do_action("next_note")
+        end,
+        opts = { desc = "Next scratchpad" },
+      },
       -- show the result of the currently selected call record
       { key = "<CR>", mode = "", action = "show_result" },
       -- cancel the currently selected call (if its still executing)
