@@ -180,6 +180,17 @@ for _, state in ipairs { "unknown", "executing", "retrieving" } do
   assert(#executions == count, "R duplicated an already running query")
 end
 
+-- Missing connection IDs must never rerun a history query on the active connection.
+for _, id in ipairs { false, "", " \t " } do
+  local call = vim.deepcopy(old)
+  call.connection_id = id or nil
+  ui:set_call(call)
+  local count = #executions
+  press("R")
+  assert(#executions == count, "missing connection reran query on another connection")
+  assert(notices[#notices]:find("original connection", 1, true), "missing connection was not reported")
+end
+
 -- Wiping the result buffer stops timer callbacks and ignores late completions.
 ui:set_call(old)
 ui:page_current()

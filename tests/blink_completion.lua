@@ -91,7 +91,9 @@ suggest("SELECT * FROM users wh|", "WHERE", "SELECT * FROM users WHERE")
 suggest("-- café\n  se|", "SELECT", "-- café\n  SELECT")
 suggest("SELECT * FROM us|", "public.users", "SELECT * FROM public.users")
 suggest("SELECT * FROM public.us|", "public.users", "SELECT * FROM public.users")
-for _, whitespace in ipairs { "", " ", "   ", "\n", "\n\t", "  \n\n  " } do
+suggest("SELECT id,| FROM users", nil)
+suggest("SELECT id,na| FROM users", "name", "SELECT id,name FROM users")
+for _, whitespace in ipairs { " ", "   ", "\t", "\n", "\n\t", "  \n\n  " } do
   suggest("SELECT id," .. whitespace .. "| FROM users", "name", "SELECT id," .. whitespace .. "name FROM users")
   suggest(
     "SELECT * FROM users," .. whitespace .. "|",
@@ -99,6 +101,7 @@ for _, whitespace in ipairs { "", " ", "   ", "\n", "\n\t", "  \n\n  " } do
     "SELECT * FROM users," .. whitespace .. "public.orders"
   )
 end
+suggest("SELECT * FROM users,|", "public.orders", "SELECT * FROM users,public.orders")
 suggest("SELECT u.na| FROM users u", "u.name", "SELECT u.name FROM users u")
 suggest("-- café\nSELECT u.na| FROM users u", "u.name", "-- café\nSELECT u.name FROM users u")
 suggest('SELECT "é".na| FROM users "é"', "é.name", 'SELECT "é".name FROM users "é"')
@@ -116,6 +119,13 @@ suggest("SELECT * FROM users WHERE name = 'na|", nil)
 suggest("SELECT * FROM us|", nil, nil, "text")
 assert(not source:enabled(), "provider is enabled outside SQL")
 conn = { id = "bigquery", type = "bigquery", url = "bigquery://my-project" }
+suggest("SELECT * FROM prous|", "my-project.public.users", "SELECT * FROM `my-project.public.users`")
+suggest("SELECT * FROM ProUs|", "my-project.public.users", "SELECT * FROM `my-project.public.users`")
+suggest("SELECT * FROM `prous|`", "my-project.public.users", "SELECT * FROM `my-project.public.users`")
+suggest("SELECT * FROM my-project.|", "my-project.public", "SELECT * FROM `my-project.public`")
+suggest("SELECT * FROM my-project.|", "my-project.public.users", "SELECT * FROM `my-project.public.users`")
+suggest("SELECT * FROM my-project.us|", "my-project.public.users", "SELECT * FROM `my-project.public.users`")
+suggest("SELECT * FROM `my-project.us|`", "my-project.public.users", "SELECT * FROM `my-project.public.users`")
 suggest(
   "SELECT * FROM `my-project.public.users`|",
   "my-project.public.users",

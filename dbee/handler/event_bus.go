@@ -30,6 +30,7 @@ func (eb *eventBus) CallStateChanged(call *core.Call) {
 	data := fmt.Sprintf(`{
 		call = {
 			id = %q,
+			connection_id = %q,
 			query = %q,
 			state = %q,
 			time_taken_us = %d,
@@ -37,6 +38,7 @@ func (eb *eventBus) CallStateChanged(call *core.Call) {
 			error = %s,
 		},
 	}`, call.GetID(),
+		call.GetConnectionID(),
 		call.GetQuery(),
 		call.GetState().String(),
 		call.GetTimeTaken().Microseconds(),

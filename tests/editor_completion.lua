@@ -75,13 +75,23 @@ local function suggest(query, expected, excluded, provider)
 end
 
 suggest("SELECT * FROM |", { "public", "archive", "public.users", "public.orders", "public.active_users" })
-suggest("SELECT * FROM pu|", { "public" }, { "archive", "public.users" })
-suggest("SELECT * FROM us|", { "public.users" }, { "public.orders" })
+suggest("SELECT * FROM pu|", { "public", "public.users" }, { "archive", "archive.events" })
+local _, fuzzy_items = suggest("SELECT * FROM us|", { "public.users" }, { "archive.events" })
+assert(fuzzy_items[1].word == "public.users", "table name match should rank ahead of scattered path matches")
 suggest("SELECT * FROM public.|", { "public.users", "public.orders" }, { "archive.events", "public" })
 suggest("SELECT * FROM public.us|", { "public.users" }, { "public.orders" })
 suggest("SELECT * FROM users u JOIN |", { "public.users", "public.orders" })
 suggest("SELECT * FROM users u LEFT OUTER JOIN public.|", { "public.orders" })
 suggest("SELECT * FROM users u, |", { "public.orders" })
+suggest("SELECT id,| FROM users", {})
+suggest("SELECT id,na| FROM users", { "name" })
+for _, whitespace in ipairs { " ", "   ", "\t", "\n", "\n\t", "  \n\n  " } do
+  suggest("SELECT id," .. whitespace .. "| FROM users", { "name" })
+end
+suggest("SELECT * FROM (SELECT id,| FROM users) q", {})
+suggest("SELECT * FROM (SELECT id,\n| FROM users) q", { "name" })
+suggest("SELECT * FROM users,|", { "public.orders" })
+suggest("SELECT * FROM users ORDER BY id,|", { "name" })
 suggest("SELECT * FROM users u JOIN orders o ON u.id=o.user_id, |", { "public.orders" })
 suggest("SELECT e.| FROM users u JOIN orders o ON u.id=o.user_id, events e", { "e.event_id" })
 suggest("SELECT * FROM (SELECT * FROM public.|) q", { "public.users", "public.orders" })
@@ -195,6 +205,13 @@ structure = {
   },
 }
 suggest("SELECT * FROM |", { "`my-project`", "`my-project.analytics`", "`my-project.analytics.events`" })
+suggest("SELECT * FROM proev|", { "`my-project.analytics.events`" }, { "`my-project`", "`my-project.analytics`" })
+suggest("SELECT * FROM ProEv|", { "`my-project.analytics.events`" })
+suggest("SELECT * FROM evt|", { "`my-project.analytics.events`" }, { "`my-project.analytics`" })
+suggest("SELECT * FROM evpro|", {})
+suggest("SELECT * FROM nonexistent|", {})
+suggest("SELECT * FROM `proev|`", { "`my-project.analytics.events" })
+suggest("SELECT * FROM analytics.events e JOIN proev|", { "`my-project.analytics.events`" })
 suggest("SELECT * FROM analytics.|", { "analytics.events" })
 suggest("SELECT * FROM `my-project.analytics.|", { "`my-project.analytics.events`" })
 suggest("SELECT * FROM `my-project.analytics.events`|", { "`my-project.analytics.events`" })
@@ -207,7 +224,20 @@ suggest("SELECT * FROM `my-project`|", { "`my-project`" })
 suggest("SELECT * FROM `my-project`.|", { "`my-project.analytics`" })
 suggest("SELECT e.| FROM `my-project.analytics.events` e", { "e.event_id" })
 suggest("SELECT e.| FROM analytics.events e", { "e.event_id" })
-suggest("SELECT * FROM my-project.|", { "`my-project.analytics`" })
+suggest("SELECT * FROM my-project.|", { "`my-project.analytics`", "`my-project.analytics.events`" })
+suggest("SELECT * FROM my-project.ev|", { "`my-project.analytics.events`" }, { "`my-project.analytics`" })
+suggest("SELECT * FROM `my-project.|", { "`my-project.analytics`", "`my-project.analytics.events`" })
+suggest("SELECT * FROM `my-project.ev|`", { "`my-project.analytics.events" })
+suggest("SELECT * FROM unknown-project.|", {})
+structure[#structure + 1] = {
+  name = "archive",
+  type = "dataset",
+  children = { { name = "events", type = "table", schema = "archive" } },
+}
+suggest("SELECT * FROM my-project.ev|", { "`my-project.analytics.events`", "`my-project.archive.events`" })
+suggest("SELECT * FROM proev|", { "`my-project.analytics.events`", "`my-project.archive.events`" })
+suggest("SELECT * FROM my-project.analytics.|", { "`my-project.analytics.events`" }, { "`my-project.archive.events`" })
+table.remove(structure)
 suggest("SELECT * FROM my-project.analytics.|", { "`my-project.analytics.events`" })
 suggest("SELECT * FROM my-project.analytics.ev|", { "`my-project.analytics.events`" })
 suggest("SELECT * FROM my-pr|", { "`my-project`" })
@@ -267,7 +297,11 @@ structure = {
     },
   },
 }
-suggest("SELECT * FROM catalog.|", { "catalog.analytics" })
+suggest("SELECT * FROM catalog.|", { "catalog.analytics", "catalog.analytics.events" })
+suggest("SELECT * FROM catalog.ev|", { "catalog.analytics.events" }, { "catalog.analytics" })
+suggest("SELECT * FROM cataev|", { "catalog.analytics.events" }, { "catalog.analytics", "catalog" })
+suggest('SELECT * FROM "catalog".|', { '"catalog".analytics', '"catalog".analytics.events' })
+suggest('SELECT * FROM "CATALOG".|', {})
 suggest("SELECT * FROM catalog.analytics.|", { "catalog.analytics.events" })
 suggest("SELECT e.| FROM catalog.analytics.events e", { "e.event_id" })
 
@@ -279,7 +313,8 @@ structure = { { name = "dbo", type = "schema", children = {
   { name = "events", schema = "dbo", type = "table" },
 } } }
 suggest("SELECT * FROM |", { "warehouse", "other", "warehouse.dbo.events" })
-suggest("SELECT * FROM warehouse.|", { "warehouse.dbo" })
+suggest("SELECT * FROM warehouse.|", { "warehouse.dbo", "warehouse.dbo.events" })
+suggest("SELECT * FROM warehouse.ev|", { "warehouse.dbo.events" }, { "warehouse.dbo" })
 suggest("SELECT * FROM warehouse.dbo.|", { "warehouse.dbo.events" })
 suggest("SELECT * FROM other.|", {})
 suggest("SELECT e.| FROM dbo.events e", { "e.event_id" })

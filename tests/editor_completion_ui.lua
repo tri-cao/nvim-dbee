@@ -111,6 +111,21 @@ local phases = {
     input("<Esc>")
   end,
   function()
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "" })
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
+    input("iSELECT * FROM puusr")
+  end,
+  function()
+    assert(vim.fn.pumvisible() == 1 and words()["public.users"], "native popup filtered out a fuzzy path match")
+    assert(not words()["public.usage"], "fuzzy popup included a path missing the typed characters")
+    assert(vim.api.nvim_get_current_line() == "SELECT * FROM puusr", "fuzzy popup changed typed SQL")
+    input("<C-n><C-y>")
+  end,
+  function()
+    assert(vim.api.nvim_get_current_line() == "SELECT * FROM public.users", "fuzzy acceptance used the wrong range")
+    input("<Esc>")
+  end,
+  function()
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "SELECT u. FROM public.users u" })
     vim.api.nvim_win_set_cursor(0, { 1, 8 })
     input("a<C-x><C-o>")
@@ -135,7 +150,7 @@ local phases = {
     input("A,")
   end,
   function()
-    assert(vim.fn.pumvisible() == 1 and words().name, "comma did not suggest columns")
+    assert(vim.fn.pumvisible() == 0, "comma opened columns before whitespace")
     input(" ")
   end,
   function()
@@ -156,6 +171,24 @@ local phases = {
   function()
     assert(vim.fn.pumvisible() == 1 and words().name, "indentation after comma hid columns")
     input("<C-e><Esc>")
+  end,
+  function()
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "SELECT id", "FROM public.users" })
+    vim.api.nvim_win_set_cursor(0, { 1, 8 })
+    input("A,")
+  end,
+  function()
+    assert(vim.fn.pumvisible() == 0, "comma opened columns before Enter")
+    input("<CR>")
+  end,
+  function()
+    assert(vim.fn.pumvisible() == 1 and words().name, "Enter directly after comma did not suggest columns")
+    input("<BS>")
+  end,
+  function()
+    assert(vim.api.nvim_get_current_line() == "SELECT id,", "backspace did not remove the newline")
+    assert(vim.fn.pumvisible() == 0, "removing whitespace after comma kept the popup open")
+    input("<Esc>")
   end,
   function()
     require("dbee.ui.editor.completion").attach(bufnr, require("dbee.completion").new(handler), { auto = false })

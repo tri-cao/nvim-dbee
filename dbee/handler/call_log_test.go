@@ -19,6 +19,13 @@ func TestGlobalCallLogMigratesAndRetainsLatestTwenty(t *testing.T) {
 			"id": fmt.Sprint(i), "query": fmt.Sprintf("select %d", i),
 			"timestamp_us": i + 1, "state": "canceled",
 		})
+		entry := legacy[conn][len(legacy[conn])-1]
+		switch i % 3 {
+		case 1:
+			entry["connection_id"] = ""
+		case 2:
+			entry["connection_id"] = " \t "
+		}
 	}
 	path := filepath.Join(t.TempDir(), "calllog.json")
 	data, err := json.Marshal(legacy)

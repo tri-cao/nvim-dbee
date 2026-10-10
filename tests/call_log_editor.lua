@@ -89,15 +89,14 @@ press_edit()
 local second = check_query("second", { "select", "  42;", "" }, 1)
 assert(vim.fn.getreg('"') == "keep clipboard", "editing changed the clipboard")
 
--- Legacy calls without a connection ID use the connection that owns the history.
+-- Restored calls keep their original connection even when another one is active.
 editor:open_connection_scratchpad("first")
 local first = editor:get_current_note()
 vim.api.nvim_buf_set_lines(first.bufnr, 0, -1, false, { "select 'draft';" })
 vim.cmd("write")
 vim.api.nvim_buf_set_lines(first.bufnr, 0, -1, false, { "select 'unsaved draft';" })
 editor:open_connection_scratchpad("second")
-handler:set_current_connection("first")
-calls.first = { { id = "legacy", query = "select 2;", state = "overwritten", timestamp_us = 2 } }
+calls.first = { { id = "legacy", connection_id = "first", query = "select 2;", state = "overwritten", timestamp_us = 2 } }
 history:refresh()
 press_edit()
 local reused = check_query("first", { "select 'unsaved draft';", "", "select 2;" }, 3)

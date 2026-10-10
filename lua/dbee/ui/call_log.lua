@@ -21,7 +21,6 @@ local action_descriptions = {
 ---@field private winid? integer
 ---@field private bufnr integer
 ---@field private candies table<string, Candy> map of eye-candy stuff (icons, highlight)
----@field private current_connection_id? connection_id
 ---@field private hover_close? fun() function that closes the hover window
 ---@field private window_options table<string, any> a table of window options.
 ---@field private buffer_options table<string, any> a table of buffer options.
@@ -59,7 +58,6 @@ function CallLogUI:new(handler, editor, result, opts)
     candies = candies,
     mappings = opts.mappings or {},
     hover_close = function() end,
-    current_connection_id = (handler:get_current_connection() or {}).id,
     window_options = vim.tbl_extend("force", {
       wrap = false,
       winfixheight = true,
@@ -107,9 +105,8 @@ end
 
 -- event listener for current connection change
 ---@private
----@param data { conn_id: connection_id }
-function CallLogUI:on_current_connection_changed(data)
-  self.current_connection_id = data.conn_id
+---@param _ { conn_id: connection_id }
+function CallLogUI:on_current_connection_changed(_)
   self:refresh()
 end
 
@@ -175,8 +172,6 @@ function CallLogUI:create_tree(bufnr)
 
       line:append(make_length(state_preview, 3), candy.icon_highlight)
       line:append(" ┃ ", "NonText")
-      line:append(make_length(call.connection_id or "", 16), "Comment")
-      line:append(" ┃ ", "NonText")
       line:append(make_length(string.gsub(call.query, "\n", " "), 40), candy.text_highlight)
 
       return line
@@ -233,10 +228,8 @@ function CallLogUI:get_actions()
       end
 
       local conn_id = node.call.connection_id
-      if not conn_id or conn_id == "" then
-        conn_id = self.current_connection_id
-      end
-      if not conn_id then
+      if not conn_id or conn_id:match("^%s*$") then
+        vim.notify("DBee: This query's history is missing its original connection.", vim.log.levels.ERROR)
         return
       end
 
@@ -329,9 +322,17 @@ function CallLogUI:configure_preview(bufnr)
         return
       end
 
+      local connection_name = call.connection_id or ""
+      if not connection_name:match("^%s*$") then
+        local ok, conn = pcall(self.handler.connection_get_params, self.handler, call.connection_id)
+        if ok and conn and conn.name and conn.name ~= "" then
+          connection_name = conn.name
+        end
+      end
+
       local call_summary = {
         { key = "id", value = call.id },
-        { key = "connection", value = call.connection_id or "" },
+        { key = "connection", value = connection_name },
         { key = "query", value = string.gsub(call.query, "\n", " ") },
         { key = "state", value = call.state },
         { key = "time_taken", value = string.format("%.3f seconds", (call.time_taken_us or 0) / 1000000) },

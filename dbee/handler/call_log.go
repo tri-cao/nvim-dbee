@@ -118,7 +118,7 @@ func (h *Handler) restoreCallLogFrom(path string) error {
 		for connID, entries := range legacy {
 			for _, entry := range entries {
 				var id core.ConnectionID
-				if err := json.Unmarshal(entry["connection_id"], &id); err != nil || id == "" {
+				if err := json.Unmarshal(entry["connection_id"], &id); err != nil || strings.TrimSpace(string(id)) == "" {
 					entry["connection_id"], _ = json.Marshal(connID)
 				}
 				encoded, err := json.Marshal(entry)

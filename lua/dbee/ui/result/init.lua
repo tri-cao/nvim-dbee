@@ -454,11 +454,8 @@ function ResultUI:refresh()
     return
   end
   local conn_id = call.connection_id
-  if not conn_id or conn_id == "" then
-    local conn = self.handler:get_current_connection()
-    conn_id = conn and conn.id
-  end
-  if not conn_id then
+  if not conn_id or conn_id:match("^%s*$") then
+    vim.notify("DBee: This query's history is missing its original connection.", vim.log.levels.ERROR)
     return
   end
 

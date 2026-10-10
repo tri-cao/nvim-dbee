@@ -291,6 +291,10 @@ function M.complete(handler, text, cursor, cache)
   local parsed = sql.parse(text, cursor, conn and conn.type)
   local fragment = sql.fragment(parsed)
   local context = sql.context(parsed, fragment)
+  -- Wait for whitespace or a column prefix after a SELECT-list comma.
+  if context == "column" and parsed.clause == "select" and text:sub(cursor - 1, cursor - 1) == "," then
+    return fragment.first - 1, {}
+  end
   local keyword_items = keywords.complete(parsed, fragment, context)
   if not context or not conn then
     return fragment.first - 1, keyword_items
@@ -313,12 +317,13 @@ function M.complete(handler, text, cursor, cache)
   if not ok then
     return fragment.first - 1, keyword_items
   end
-  local items, seen = {}, {}
+  local items, seen, name_prefixes = {}, {}, {}
   local completed_identifier = false
   local prefix = fragment.parts[#fragment.parts]:lower()
   local qualifier = vim.list_slice(fragment.parts, 1, #fragment.parts - 1)
+  local fuzzy_path = context == "table" and #qualifier == 0
   local function add(parts, label, kind, info, quotes)
-    if parts[#parts]:sub(1, #prefix):lower() ~= prefix then
+    if not fuzzy_path and parts[#parts]:sub(1, #prefix):lower() ~= prefix then
       return
     end
     if context ~= "table" and fragment.at_closing_quote and parts[#parts] == fragment.parts[#fragment.parts] then
@@ -334,6 +339,7 @@ function M.complete(handler, text, cursor, cache)
       return
     end
     seen[key] = true
+    name_prefixes[word] = parts[#parts]:sub(1, #prefix):lower() == prefix
     items[#items + 1] = {
       word = word,
       abbr = join(parts),
@@ -348,23 +354,27 @@ function M.complete(handler, text, cursor, cache)
     }
   end
   if context == "table" then
-    local function matches(parts)
+    local function matching_parts(parts)
       if #qualifier == 0 then
-        return true
+        return parts
       end
-      return metadata_matches(vim.list_slice(parts, 1, #parts - 1), qualifier, fragment.quotes, conn)
+      -- A namespace also exposes descendants, retaining every intervening path segment.
+      for length = #parts - 1, #qualifier, -1 do
+        if metadata_matches(vim.list_slice(parts, 1, length), qualifier, fragment.quotes, conn) then
+          return vim.list_extend(vim.deepcopy(qualifier), vim.list_slice(parts, length + 1))
+        end
+      end
     end
     for _, namespace in pairs(metadata.namespaces) do
-      if matches(namespace.parts) then
-        local parts = #qualifier > 0 and vim.list_extend(vim.deepcopy(qualifier), { namespace.parts[#namespace.parts] })
-          or namespace.parts
+      local parts = matching_parts(namespace.parts)
+      if parts then
         add(parts, "[" .. namespace.kind .. "]", "m", nil, #qualifier > 0 and fragment.quotes or nil)
       end
     end
     for _, entry in ipairs(metadata.tables) do
-      if matches(entry.parts) then
-        local parts = #qualifier > 0 and vim.list_extend(vim.deepcopy(qualifier), { entry.name }) or entry.parts
-        -- Match the table name even when inserting its fully qualified path.
+      local parts = matching_parts(entry.parts)
+      if parts then
+        -- Preserve the full path when accepting a table matched by name or path.
         add(parts, "[" .. entry.opts.materialization .. "]", "t", nil, #qualifier > 0 and fragment.quotes or nil)
       end
     end
@@ -477,6 +487,17 @@ function M.complete(handler, text, cursor, cache)
     end
     return a.word < b.word
   end)
+  if fuzzy_path and prefix ~= "" then
+    -- Match across namespace segments and rank closer matches first.
+    items = vim.fn.matchfuzzy(items, prefix, { key = "abbr", matchseq = 1 })
+    local names, paths = {}, {}
+    for _, item in ipairs(items) do
+      local matches = name_prefixes[item.word] and names or paths
+      matches[#matches + 1] = item
+    end
+    -- Direct name prefixes stay ahead of matches scattered across the full path.
+    items = vim.list_extend(names, paths)
+  end
   -- Keep matching identifiers ahead of keywords when both share a prefix.
   vim.list_extend(items, keyword_items)
   return fragment.first - 1, items

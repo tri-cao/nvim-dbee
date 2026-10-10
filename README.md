@@ -274,6 +274,11 @@ Here are a few steps to quickly get started:
     FROM and JOIN suggest projects, databases,
     datasets, schemas, tables, views, and CTEs from the active connection. Other clauses suggest
     columns from the current query's sources, including aliases and subquery/CTE output columns.
+    After a comma in the SELECT list, type a space, newline, or column prefix to open suggestions.
+    A namespace prefix such as `my-project.` suggests both datasets and their tables; typing
+    `my-project.ev` matches table names such as `my-project.analytics.events` directly.
+    Before typing a dot, fuzzy matching searches the full path: `proev` matches
+    `my-project.analytics.events`, with closer matches listed first.
     Shared column names are qualified with their table alias to avoid ambiguous SQL.
     BigQuery paths such as `my-project.dataset.table` work without typing backticks first;
     accepting a table suggestion adds identifier quotes when needed.

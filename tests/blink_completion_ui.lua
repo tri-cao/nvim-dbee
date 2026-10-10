@@ -211,7 +211,7 @@ local phases = {
     input("A,")
   end,
   function()
-    assert(words().name, "comma did not suggest scratchpad columns")
+    assert(not cmp.is_visible(), "comma opened scratchpad columns before whitespace")
     assert(vim.api.nvim_get_current_line() == "SELECT id,", "comma completion changed typed text")
     input(" ")
   end,
@@ -246,7 +246,7 @@ local phases = {
     input("A,")
   end,
   function()
-    assert(words().name, "comma did not suggest SQL columns")
+    assert(not cmp.is_visible(), "comma opened SQL columns before whitespace")
     input(" ")
   end,
   function()
@@ -288,6 +288,24 @@ local phases = {
       vim.deep_equal(vim.api.nvim_buf_get_lines(sql, 0, -1, false), { "SELECT id,   ", "\t", "\tname", "FROM public.users" }),
       "Enter did not accept the explicitly selected column"
     )
+    input("<Esc>")
+  end,
+  function()
+    vim.api.nvim_buf_set_lines(sql, 0, -1, false, { "SELECT id", "FROM public.users" })
+    vim.api.nvim_win_set_cursor(0, { 1, 8 })
+    input("A,")
+  end,
+  function()
+    assert(not cmp.is_visible(), "comma opened SQL columns before Enter")
+    input("<CR>")
+  end,
+  function()
+    assert(words().name, "Enter directly after comma did not suggest SQL columns")
+    input("<BS>")
+  end,
+  function()
+    assert(vim.api.nvim_get_current_line() == "SELECT id,", "backspace did not remove the newline")
+    assert(not cmp.is_visible(), "removing whitespace after comma kept Blink open")
     input("<Esc>")
   end,
   function()
