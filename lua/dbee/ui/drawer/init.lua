@@ -12,10 +12,12 @@ local expansion = require("dbee.ui.drawer.expansion")
 ---@class DrawerUINode: NuiTree.Node
 ---@field id string unique identifier
 ---@field name string display name
----@field type ""|"table"|"view"|"column"|"history"|"note"|"connection"|"database_switch"|"add"|"edit"|"remove"|"help"|"source"|"separator" type of node
+---@field type ""|"table"|"view"|"column"|"history"|"note"|"connection"|"database_switch"|"add"|"edit"|"remove"|"source"|"separator" type of node
 ---@field action_1? drawer_node_action primary action if function takes a second selection parameter, pick_items get picked before the call
 ---@field action_2? drawer_node_action secondary action if function takes a second selection parameter, pick_items get picked before the call
 ---@field action_3? drawer_node_action tertiary action if function takes a second selection parameter, pick_items get picked before the call
+---@field action_add_connection? drawer_node_action add a connection to this source
+---@field action_edit_source? drawer_node_action edit the source file for this connection
 ---@field lazy_children? fun():DrawerUINode[] lazy loaded child nodes
 
 ---@class DrawerUI
@@ -25,7 +27,6 @@ local expansion = require("dbee.ui.drawer.expansion")
 ---@field private result ResultUI
 ---@field private mappings key_mapping[]
 ---@field private candies table<string, Candy> map of eye-candy stuff (icons, highlight)
----@field private disable_help boolean show help or not
 ---@field private winid? integer
 ---@field private bufnr integer
 ---@field private current_conn_id? connection_id current active connection
@@ -67,7 +68,6 @@ function DrawerUI:new(handler, editor, result, opts)
     result = result,
     mappings = opts.mappings or {},
     candies = candies,
-    disable_help = opts.disable_help or false,
     current_conn_id = current_conn.id,
     current_note_id = current_note.id,
     window_options = vim.tbl_extend("force", {
@@ -252,6 +252,28 @@ function DrawerUI:get_actions()
   end
 
   return {
+    add_connection = function()
+      local node = self.tree:get_node()
+      while node and node.type ~= "source" do
+        local parent_id = node:get_parent_id()
+        node = parent_id and self.tree:get_node(parent_id) or nil
+      end
+      if node then
+        perform_action(node.action_add_connection)
+      end
+    end,
+    edit_source = function()
+      local node = self.tree:get_node()
+      if node and node.type == "connection" then
+        perform_action(node.action_edit_source)
+      end
+    end,
+    show_help = function()
+      menu.help(self.mappings)
+    end,
+    search = function()
+      require("dbee").search()
+    end,
     refresh = function()
       self:refresh()
     end,
@@ -374,20 +396,15 @@ function DrawerUI:refresh()
   -- assemble tree layout
   ---@type DrawerUINode[]
   local nodes = {}
+  for _, ly in ipairs(convert.handler_nodes(self.handler, self.result)) do
+    table.insert(nodes, ly)
+  end
+  table.insert(nodes, convert.separator_node())
   local editor_nodes = convert.editor_nodes(self.editor, self.current_conn_id, function()
     self:refresh()
   end)
   for _, ly in ipairs(editor_nodes) do
     table.insert(nodes, ly)
-  end
-  table.insert(nodes, convert.separator_node())
-  for _, ly in ipairs(convert.handler_nodes(self.handler, self.result)) do
-    table.insert(nodes, ly)
-  end
-
-  if not self.disable_help then
-    table.insert(nodes, convert.separator_node())
-    table.insert(nodes, convert.help_node(self.mappings))
   end
 
   local exp = expansion.get(self.tree)

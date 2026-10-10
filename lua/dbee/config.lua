@@ -73,10 +73,18 @@ config.default = {
     window_options = {},
     buffer_options = {},
 
-    -- show help or not
+    -- deprecated: help is now a popup opened with show_help
     disable_help = false,
     -- mappings for the buffer
     mappings = {
+      -- show all drawer keybindings in a popup
+      { key = "?", mode = "n", action = "show_help" },
+      -- search all connections, schemas, datasets, and tables with Snacks picker
+      { key = "/", mode = "n", action = "search" },
+      -- add a connection to the selected source
+      { key = "a", mode = "n", action = "add_connection" },
+      -- edit the source file only when on a connection node
+      { key = "e", mode = "n", action = "edit_source" },
       -- manually refresh drawer
       { key = "r", mode = "n", action = "refresh" },
       -- reload cached tables and columns for the connection under the cursor

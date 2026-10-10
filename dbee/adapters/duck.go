@@ -45,13 +45,22 @@ func (d *Duck) Connect(url string) (core.Driver, error) {
 	}
 
 	return &duckDriver{
-		c:              builders.NewClient(db),
+		c:         builders.NewClient(db),
 		currentDB: currentDB,
 	}, nil
 }
 
 func (*Duck) GetHelpers(opts *core.TableOptions) map[string]string {
+	function, name := "duckdb_tables()", "table_name"
+	if opts.Materialization == core.StructureTypeView {
+		function, name = "duckdb_views()", "view_name"
+	}
+	ddl := "SELECT sql AS ddl FROM " + function + " WHERE database_name = current_database() AND " + name + " = " + ddlLiteral(opts.Table)
+	if opts.Schema != "" {
+		ddl += " AND schema_name = " + ddlLiteral(opts.Schema)
+	}
 	return map[string]string{
+		"DDL":         ddl,
 		"List":        fmt.Sprintf("SELECT * FROM %q LIMIT 500", opts.Table),
 		"Columns":     fmt.Sprintf("DESCRIBE %q", opts.Table),
 		"Indexes":     fmt.Sprintf("SELECT * FROM duckdb_indexes() WHERE table_name = '%s'", opts.Table),

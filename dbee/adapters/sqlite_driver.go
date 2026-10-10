@@ -23,7 +23,7 @@ func (d *sqliteDriver) Query(ctx context.Context, query string) (core.ResultStre
 }
 
 func (d *sqliteDriver) Columns(opts *core.TableOptions) ([]*core.Column, error) {
-	return d.c.ColumnsFromQuery("SELECT name, type FROM pragma_table_info('%s')", opts.Table)
+	return d.c.ColumnsFromQuery("SELECT name, type FROM pragma_table_info(%s)", ddlLiteral(opts.Table))
 }
 
 func (d *sqliteDriver) Structure() ([]*core.Structure, error) {

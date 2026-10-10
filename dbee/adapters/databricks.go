@@ -80,6 +80,7 @@ func (d *Databricks) GetHelpers(opts *core.TableOptions) map[string]string {
 			AND table_name = '%s';`,
 		opts.Schema, opts.Table)
 	return map[string]string{
+		"DDL":         "SHOW CREATE TABLE " + ddlQualified(opts.Schema, opts.Table, "`"),
 		"List":        list,
 		"Columns":     columns,
 		"Describe":    describe,

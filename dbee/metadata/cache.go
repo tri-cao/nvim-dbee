@@ -18,7 +18,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const version = 1
+const version = 2
 
 type Cache struct {
 	db     *sql.DB
@@ -81,7 +81,7 @@ func (c *Cache) Get(key string, refresh bool, load func() (*core.Metadata, error
 	if err != nil {
 		return nil, err
 	}
-	if snapshot == nil || snapshot.Columns == nil {
+	if snapshot == nil || snapshot.Columns == nil || snapshot.DDL == nil {
 		return nil, errors.New("incomplete metadata snapshot")
 	}
 	payload, err := encode(snapshot)
@@ -126,7 +126,7 @@ func decode(payload []byte) (*core.Metadata, error) {
 	if err := msgpack.NewDecoder(bytes.NewReader(data)).Decode(&snapshot); err != nil {
 		return nil, err
 	}
-	if snapshot.Columns == nil {
+	if snapshot.Columns == nil || snapshot.DDL == nil {
 		return nil, errors.New("incomplete metadata snapshot")
 	}
 	return &snapshot, nil

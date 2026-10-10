@@ -56,12 +56,10 @@ func (p *Plugin) logReturn(method string, values []reflect.Value) {
 		v := val.Interface()
 
 		if v, ok := v.(error); ok && v != nil {
-			p.log.Infof("method %q failed with error: %s", method, v)
+			p.log.Errorf("method %q failed with error: %s", method, v)
 			return
 		}
 	}
-
-	p.log.Infof("method %q returned successfully", method)
 }
 
 // RegisterEndpoint registers fn as a handler for a vim function. The function
@@ -76,7 +74,6 @@ func (p *Plugin) RegisterEndpoint(name string, fn any) {
 	v := reflect.ValueOf(fn)
 
 	newFn := reflect.MakeFunc(v.Type(), func(args []reflect.Value) (results []reflect.Value) {
-		p.log.Infof("calling method %q", name)
 		ret := v.Call(args)
 		p.logReturn(name, ret)
 		return ret

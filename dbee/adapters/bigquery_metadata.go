@@ -12,9 +12,62 @@ import (
 	"github.com/kndndrj/nvim-dbee/dbee/core"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/googleapi"
+	"google.golang.org/api/iterator"
 )
 
 var _ core.MetadataDriver = (*bigQueryDriver)(nil)
+var _ core.DDLMetadataDriver = (*bigQueryDriver)(nil)
+
+// MetadataDDL reads the server's complete DDL in one query per dataset. The
+// schema API does not expose DDL (partitioning, clustering, options, and views).
+func (d *bigQueryDriver) MetadataDDL(structure []*core.Structure) (map[string]string, error) {
+	ddls := make(map[string]string)
+	for _, dataset := range structure {
+		if len(dataset.Children) == 0 {
+			continue
+		}
+		keys := make(map[string]string)
+		for _, table := range dataset.Children {
+			keys[table.Name] = core.ColumnKey(&core.TableOptions{Schema: table.Schema, Table: table.Name, Materialization: table.Type})
+		}
+		name := strings.ReplaceAll(d.c.Project()+"."+dataset.Name, "`", "\\`")
+		query := d.c.Query("SELECT table_name, ddl FROM `" + name + ".INFORMATION_SCHEMA.TABLES`")
+		query.MaxBytesBilled = d.MaxBytesBilled
+		query.DisableQueryCache = d.DisableQueryCache
+		iter, err := query.Read(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("DDL for dataset %s: %w", dataset.Name, err)
+		}
+		for {
+			var row []bigquery.Value
+			if err := iter.Next(&row); err != nil {
+				if errors.Is(err, iterator.Done) {
+					break
+				}
+				return nil, fmt.Errorf("DDL for dataset %s: %w", dataset.Name, err)
+			}
+			if len(row) != 2 {
+				return nil, fmt.Errorf("invalid DDL row for dataset %s", dataset.Name)
+			}
+			table, ok := row[0].(string)
+			if !ok {
+				return nil, fmt.Errorf("invalid table name in DDL for dataset %s", dataset.Name)
+			}
+			key, exists := keys[table]
+			if !exists || row[1] == nil {
+				continue
+			}
+			ddl, ok := row[1].(string)
+			if !ok {
+				return nil, fmt.Errorf("invalid DDL text for %s.%s", dataset.Name, table)
+			}
+			if strings.TrimSpace(ddl) != "" {
+				ddls[key] = ddl
+			}
+		}
+	}
+	return ddls, nil
+}
 
 // Metadata reads table schemas through the metadata API instead of running a
 // separate INFORMATION_SCHEMA query for every table.

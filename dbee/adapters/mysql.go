@@ -43,6 +43,7 @@ func (m *MySQL) Connect(url string) (core.Driver, error) {
 
 func (*MySQL) GetHelpers(opts *core.TableOptions) map[string]string {
 	return map[string]string{
+		"DDL":          "SHOW CREATE TABLE " + ddlQualified(opts.Schema, opts.Table, "`"),
 		"List":         fmt.Sprintf("SELECT * FROM `%s`.`%s` LIMIT 500", opts.Schema, opts.Table),
 		"Columns":      fmt.Sprintf("DESCRIBE `%s`.`%s`", opts.Schema, opts.Table),
 		"Indexes":      fmt.Sprintf("SHOW INDEXES FROM `%s`.`%s`", opts.Schema, opts.Table),

@@ -60,6 +60,13 @@ function dbee.is_open()
   return api.current_config().window_layout:is_open()
 end
 
+---Search connections, schemas, datasets, and tables using Snacks picker.
+---@param pattern? string initial search text
+function dbee.search(pattern)
+  local state = require("dbee.api.state")
+  return require("dbee.ui.search").open(state.handler(), state.editor(), state.result(), dbee.open, pattern)
+end
+
 ---Refresh cached tables and columns, then redraw the drawer.
 ---@param id? connection_id defaults to the active connection
 function dbee.refresh_metadata(id)

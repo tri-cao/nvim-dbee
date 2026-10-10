@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/url"
+	"strings"
 
 	"cloud.google.com/go/bigquery"
 	"cloud.google.com/go/civil"
@@ -117,6 +118,7 @@ func (*BigQuery) GetHelpers(opts *core.TableOptions) map[string]string {
 		dataset = opts.Project + "." + dataset
 	}
 	return map[string]string{
+		"DDL":     "SELECT ddl FROM `" + strings.ReplaceAll(dataset, "`", "\\`") + ".INFORMATION_SCHEMA.TABLES` WHERE table_name = " + fmt.Sprintf("%q", opts.Table),
 		"List":    fmt.Sprintf("SELECT * FROM `%s.%s` TABLESAMPLE SYSTEM (5 PERCENT)", dataset, opts.Table),
 		"Columns": fmt.Sprintf("SELECT * FROM `%s.INFORMATION_SCHEMA.COLUMNS` WHERE TABLE_SCHEMA = '%s' AND TABLE_NAME = '%s'", dataset, opts.Schema, opts.Table),
 	}

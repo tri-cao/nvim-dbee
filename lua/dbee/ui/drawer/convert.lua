@@ -119,56 +119,31 @@ local function handler_real_nodes(handler, result)
     ---@type DrawerUINode[]
     local children = {}
 
-    -- source can add connections
+    local add_action
     if type(source.create) == "function" then
-      table.insert(
-        children,
-        NuiTree.Node {
-          id = "__source_add_connection__" .. source_id,
-          name = "add",
-          type = "add",
-          action_1 = function(cb)
-            local prompt = {
-              { key = "name" },
-              { key = "type" },
-              { key = "url" },
-            }
-            common.float_prompt(prompt, {
-              title = "Add Connection",
-              callback = function(res)
-                local spec = {
-                  name = res.name,
-                  url = res.url,
-                  type = res.type,
-                }
-                pcall(handler.source_add_connection, handler, source_id, spec)
-                cb()
-              end,
-            })
+      add_action = function(cb)
+        common.float_prompt({ { key = "name" }, { key = "type" }, { key = "url" } }, {
+          title = "Add Connection",
+          callback = function(res)
+            local spec = { name = res.name, type = res.type, url = res.url }
+            pcall(handler.source_add_connection, handler, source_id, spec)
+            cb()
           end,
-        } --[[@as DrawerUINode]]
-      )
+        })
+      end
     end
 
-    -- source has an editable source file
+    local edit_source_action
     if type(source.file) == "function" then
-      table.insert(
-        children,
-        NuiTree.Node {
-          id = "__source_edit_connections__" .. source_id,
-          name = "edit source",
-          type = "edit",
-          action_1 = function(cb)
-            common.float_editor(source:file(), {
-              title = "Add Connection",
-              callback = function()
-                handler:source_reload(source_id)
-                cb()
-              end,
-            })
+      edit_source_action = function(cb)
+        common.float_editor(source:file(), {
+          title = "Edit Source",
+          callback = function()
+            handler:source_reload(source_id)
+            cb()
           end,
-        } --[[@as DrawerUINode]]
-      )
+        })
+      end
     end
 
     -- get connections of that source
@@ -234,6 +209,7 @@ local function handler_real_nodes(handler, result)
         action_2 = edit_action,
         -- remove connection
         action_3 = delete_action,
+        action_edit_source = edit_source_action,
         lazy_children = function()
           return connection_nodes(handler, conn, result)
         end,
@@ -242,11 +218,12 @@ local function handler_real_nodes(handler, result)
       table.insert(children, node)
     end
 
-    if #children > 0 then
+    if #children > 0 or add_action or edit_source_action then
       local node = NuiTree.Node({
         id = "__source__" .. source_id,
-        name = source_id,
+        name = source_id == "persistence.json" and "connections" or source_id,
         type = "source",
+        action_add_connection = add_action,
       }, children) --[[@as DrawerUINode]]
 
       if utils.once("handler_expand_once_id" .. source_id) then
@@ -305,42 +282,6 @@ function M.separator_node()
     name = "",
     type = "separator",
   } --[[@as DrawerUINode]]
-end
-
----@param mappings key_mapping[]
----@return DrawerUINode
-function M.help_node(mappings)
-  -- help node
-  ---@type DrawerUINode[]
-  local children = {}
-  for _, km in ipairs(mappings) do
-    if type(km.action) == "string" then
-      table.insert(
-        children,
-        NuiTree.Node {
-          id = "__help_action_" .. utils.random_string(),
-          name = km.action .. " = " .. km.key .. " (" .. km.mode .. ")",
-          type = "",
-        }
-      )
-    end
-  end
-
-  table.sort(children, function(k1, k2)
-    return k1.name < k2.name
-  end)
-
-  local node = NuiTree.Node({
-    id = "__help_node__",
-    name = "help",
-    type = "help",
-  }, children) --[[@as DrawerUINode]]
-
-  if utils.once("help_expand_once_id") then
-    node:expand()
-  end
-
-  return node
 end
 
 ---@param bufnr integer

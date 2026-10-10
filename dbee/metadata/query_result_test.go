@@ -21,6 +21,7 @@ func TestQueryResultDoesNotOverwriteMetadata(t *testing.T) {
 	snapshot := &core.Metadata{
 		Structure: []*core.Structure{{Name: "orders", Type: core.StructureTypeTable}},
 		Columns:   map[string][]*core.Column{"orders": {{Name: "id", Type: "INTEGER"}}},
+		DDL:       map[string]string{"orders": "CREATE TABLE orders (id INTEGER)"},
 	}
 	_, err = cache.Get("connection", false, func() (*core.Metadata, error) { return snapshot, nil })
 	require.NoError(t, err)

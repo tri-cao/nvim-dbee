@@ -45,6 +45,7 @@ func main() {
 	}
 
 	logger := plugin.NewLogger(v)
+	defer logger.Close()
 
 	p := plugin.New(v, logger)
 

@@ -128,7 +128,7 @@ function core.connection_get_structure(id)
   return state.handler():connection_get_structure(id)
 end
 
----Refresh the persistent table and column metadata snapshot for a connection.
+---Refresh the persistent table, column, and DDL metadata snapshot for a connection.
 ---The previous snapshot remains available if the refresh fails.
 ---@param id? connection_id defaults to the active connection
 ---@return DBStructure[]
@@ -149,6 +149,15 @@ end
 ---@return Column[]
 function core.connection_get_columns(id, opts)
   return state.handler():connection_get_columns(id, opts)
+end
+
+---Get a table or view's DDL from the persistent metadata cache.
+---Raises an error if DDL is unavailable for the object or database type.
+---@param id connection_id
+---@param opts { table: string, schema: string, materialization: string }
+---@return string
+function core.connection_get_ddl(id, opts)
+  return state.handler():connection_get_ddl(id, opts)
 end
 
 ---Get parameters that define the connection.

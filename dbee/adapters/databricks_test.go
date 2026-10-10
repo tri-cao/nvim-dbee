@@ -65,6 +65,12 @@ func TestDatabricks_GetHelpers(t *testing.T) {
 		want string
 	}{
 		{
+			name: "should return DDL query",
+			key:  "DDL",
+			opts: defaultOpts,
+			want: "SHOW CREATE TABLE `test_schema`.`test_table`",
+		},
+		{
 			name: "should return list query",
 			key:  "List",
 			opts: defaultOpts,

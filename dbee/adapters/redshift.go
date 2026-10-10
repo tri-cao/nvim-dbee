@@ -52,6 +52,7 @@ func (r *Redshift) GetHelpers(opts *core.TableOptions) map[string]string {
 	switch opts.Materialization {
 	case core.StructureTypeTable:
 		out = map[string]string{
+			"DDL":     "SHOW TABLE " + ddlQualified(opts.Schema, opts.Table, "\""),
 			"List":    list,
 			"Columns": fmt.Sprintf("SELECT * FROM information_schema.columns WHERE table_name='%s' AND table_schema='%s';", opts.Table, opts.Schema),
 			"Indexes": fmt.Sprintf("SELECT * FROM pg_indexes WHERE tablename='%s' AND schemaname='%s';", opts.Table, opts.Schema),
@@ -84,6 +85,7 @@ func (r *Redshift) GetHelpers(opts *core.TableOptions) map[string]string {
 
 	case core.StructureTypeView:
 		out = map[string]string{
+			"DDL":  "SHOW VIEW " + ddlQualified(opts.Schema, opts.Table, "\""),
 			"List": list,
 			"View Definition": fmt.Sprintf(`
 				SELECT

@@ -51,6 +51,7 @@ func (p *Clickhouse) Connect(url string) (core.Driver, error) {
 
 func (*Clickhouse) GetHelpers(opts *core.TableOptions) map[string]string {
 	return map[string]string{
+		"DDL": "SHOW CREATE TABLE " + ddlQualified(opts.Schema, opts.Table, "`"),
 		"List": fmt.Sprintf(
 			"SELECT * FROM %q.%q LIMIT 500",
 			opts.Schema, opts.Table,

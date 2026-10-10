@@ -153,6 +153,18 @@ func StructureTypeFromString(s string) StructureType {
 		return StructureTypeTable
 	case "view":
 		return StructureTypeView
+	case "materialized_view":
+		return StructureTypeMaterializedView
+	case "streaming_table":
+		return StructureTypeStreamingTable
+	case "sink":
+		return StructureTypeSink
+	case "source":
+		return StructureTypeSource
+	case "managed":
+		return StructureTypeManaged
+	case "schema":
+		return StructureTypeSchema
 	default:
 		return StructureTypeNone
 	}

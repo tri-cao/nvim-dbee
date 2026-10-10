@@ -15,6 +15,7 @@ func testSnapshot(name string) *core.Metadata {
 	return &core.Metadata{
 		Structure: []*core.Structure{{Name: name, Schema: "public", Type: core.StructureTypeTable}},
 		Columns:   map[string][]*core.Column{core.ColumnKey(opts): {{Name: "id", Type: "INTEGER"}}},
+		DDL:       map[string]string{core.ColumnKey(opts): "CREATE TABLE public." + name + " (id INTEGER PRIMARY KEY)"},
 	}
 }
 
@@ -128,4 +129,20 @@ func TestCacheSeparateConnectionsShareOneFile(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, testSnapshot(key), got)
 	}
+}
+
+func TestCacheRejectsRefreshWithoutDDLMap(t *testing.T) {
+	cache, err := Open(filepath.Join(t.TempDir(), "metadata.sqlite3"))
+	require.NoError(t, err)
+	defer cache.Close()
+	want := testSnapshot("users")
+	_, err = cache.Get("connection", false, func() (*core.Metadata, error) { return want, nil })
+	require.NoError(t, err)
+	_, err = cache.Get("connection", true, func() (*core.Metadata, error) {
+		return &core.Metadata{Columns: make(map[string][]*core.Column)}, nil
+	})
+	require.ErrorContains(t, err, "incomplete metadata snapshot")
+	got, err := cache.Get("connection", false, nil)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
 }

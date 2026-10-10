@@ -31,12 +31,16 @@ func (l *Logger) setupFile() error {
 		return err
 	}
 	fileName = filepath.Join(fileName, "dbee", "dbee.log")
+	if err := os.MkdirAll(filepath.Dir(fileName), 0o755); err != nil {
+		return err
+	}
 
 	file, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
 	if err != nil {
 		return err
 	}
 
+	l.file = file
 	l.logger.SetOutput(file)
 	return nil
 }

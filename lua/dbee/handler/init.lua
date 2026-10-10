@@ -250,6 +250,24 @@ function Handler:connection_get_columns(id, opts)
 end
 
 ---@param id connection_id
+---@param opts { table: string, schema: string, materialization: string }
+---@return string
+function Handler:connection_get_ddl(id, opts)
+  local ok, ddl = pcall(vim.fn.DbeeConnectionGetDDL, id, opts)
+  if not ok then
+    if tostring(ddl):find("unknown request method: 0:function:DbeeConnectionGetDDL", 1, true) then
+      error(
+        'DBee backend is outdated: missing DbeeConnectionGetDDL. Run :lua require("dbee").install("go"), '
+          .. "wait for installation to finish, then restart Neovim.",
+        0
+      )
+    end
+    error(ddl, 0)
+  end
+  return ddl
+end
+
+---@param id connection_id
 ---@return ConnectionParams?
 function Handler:connection_get_params(id)
   local ret = vim.fn.DbeeConnectionGetParams(id)

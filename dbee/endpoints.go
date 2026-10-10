@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/neovim/go-client/nvim"
 
 	"github.com/kndndrj/nvim-dbee/dbee/core"
@@ -146,6 +148,23 @@ func mountEndpoints(p *plugin.Plugin, h *handler.Handler) {
 			Materialization: core.StructureTypeFromString(args.Opts.Materialization),
 		})
 		return handler.WrapColumns(cols), err
+	})
+
+	p.RegisterEndpoint("DbeeConnectionGetDDL", func(args *struct {
+		ID   core.ConnectionID `msgpack:",array"`
+		Opts *struct {
+			Table           string `msgpack:"table"`
+			Schema          string `msgpack:"schema"`
+			Materialization string `msgpack:"materialization"`
+		}
+	}) (any, error) {
+		if args.Opts == nil {
+			return "", fmt.Errorf("opts cannot be nil")
+		}
+		return h.ConnectionGetDDL(args.ID, &core.TableOptions{
+			Table: args.Opts.Table, Schema: args.Opts.Schema,
+			Materialization: core.StructureTypeFromString(args.Opts.Materialization),
+		})
 	})
 
 	p.RegisterEndpoint("DbeeConnectionRefreshMetadata", func(args *struct {

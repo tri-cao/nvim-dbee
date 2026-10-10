@@ -256,6 +256,26 @@ func (h *Handler) ConnectionGetColumns(connID core.ConnectionID, opts *core.Tabl
 	return columns, nil
 }
 
+// ConnectionGetDDL reads DDL from the shared metadata snapshot.
+func (h *Handler) ConnectionGetDDL(connID core.ConnectionID, opts *core.TableOptions) (string, error) {
+	c, ok := h.lookupConnection[connID]
+	if !ok {
+		return "", fmt.Errorf("unknown connection with id: %q", connID)
+	}
+	if opts == nil {
+		return "", errors.New("opts cannot be nil")
+	}
+	snapshot, err := h.connectionMetadata(c, false)
+	if err != nil {
+		return "", err
+	}
+	ddl, ok := snapshot.DDL[core.ColumnKey(opts)]
+	if !ok {
+		return "", fmt.Errorf("DDL for %s.%s is unavailable in cached metadata", opts.Schema, opts.Table)
+	}
+	return ddl, nil
+}
+
 func (h *Handler) connectionMetadata(c *core.Connection, refresh bool) (*core.Metadata, error) {
 	h.metadataMu.Lock()
 	defer h.metadataMu.Unlock()

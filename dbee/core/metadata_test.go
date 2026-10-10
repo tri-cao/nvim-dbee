@@ -70,3 +70,34 @@ func TestColumnKeyDoesNotCollideAcrossSchemas(t *testing.T) {
 	two := &TableOptions{Schema: "a", Table: "b.c", Materialization: StructureTypeTable}
 	require.NotEqual(t, ColumnKey(one), ColumnKey(two))
 }
+
+type batchMetadataTestDriver struct {
+	metadataTestDriver
+	snapshot *Metadata
+	ddl      map[string]string
+	ddlErr   error
+	ddlCalls int
+}
+
+func (d *batchMetadataTestDriver) Metadata() (*Metadata, error) { return d.snapshot, nil }
+func (d *batchMetadataTestDriver) MetadataDDL(structure []*Structure) (map[string]string, error) {
+	d.ddlCalls++
+	return d.ddl, d.ddlErr
+}
+
+func TestOptimizedMetadataAlsoCollectsDDL(t *testing.T) {
+	driver := &batchMetadataTestDriver{
+		snapshot: &Metadata{Columns: make(map[string][]*Column)},
+		ddl:      map[string]string{"table": "CREATE TABLE table (id INT)"},
+	}
+	conn := &Connection{driver: driver}
+	snapshot, err := conn.GetMetadata()
+	require.NoError(t, err)
+	require.Equal(t, driver.ddl, snapshot.DDL)
+	require.Equal(t, 1, driver.ddlCalls)
+	require.Zero(t, driver.requests, "optimized column collection must be retained")
+	driver.snapshot = &Metadata{Columns: make(map[string][]*Column)}
+	driver.ddlErr = errors.New("DDL query failed")
+	_, err = conn.GetMetadata()
+	require.ErrorContains(t, err, "DDL query failed")
+}

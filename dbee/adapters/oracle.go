@@ -31,6 +31,10 @@ func (o *Oracle) Connect(url string) (core.Driver, error) {
 }
 
 func (*Oracle) GetHelpers(opts *core.TableOptions) map[string]string {
+	objectType := "TABLE"
+	if opts.Materialization == core.StructureTypeView {
+		objectType = "VIEW"
+	}
 	from := `
 		FROM all_constraints N
 		JOIN all_cons_columns L
@@ -59,6 +63,7 @@ func (*Oracle) GetHelpers(opts *core.TableOptions) map[string]string {
 	}
 
 	return map[string]string{
+		"DDL": "SELECT DBMS_METADATA.GET_DDL(" + ddlLiteral(objectType) + ", " + ddlLiteral(opts.Table) + ", " + ddlLiteral(opts.Schema) + ") AS ddl FROM dual",
 		"Columns": fmt.Sprintf(`SELECT col.column_id,
 				col.owner AS schema_name,
 				col.table_name,

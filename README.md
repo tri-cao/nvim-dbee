@@ -186,6 +186,8 @@ Call the `setup()` function with an optional config parameter.
 require("dbee").open()
 require("dbee").close()
 require("dbee").toggle()
+-- Search connections, schemas, datasets, and tables with Snacks picker.
+require("dbee").search()
 -- Run a query on the currently active connection.
 require("dbee").execute(query)
 -- Store the current result to file/buffer/yank-register (see "Getting Started").
@@ -193,6 +195,14 @@ require("dbee").store(format, output, opts)
 ```
 
 The same functions are also available through the `:Dbee` user command.
+
+With [snacks.nvim](https://github.com/folke/snacks.nvim) installed and its picker enabled,
+press `/` in the drawer or run `:Dbee search` to search across all configured connections,
+including collapsed schemas and BigQuery datasets. Type to filter results; table and view
+previews show cached DDL, while connection, schema, and dataset previews are empty.
+Press Enter on a connection, schema, or dataset to open that connection's scratchpad;
+on a table or view, Enter runs the adapter's `List` query and displays its data.
+Use `:Dbee search users` or `require("dbee").search("users")` to start with a search term.
 
 By default, DBee opens its editor, results, drawer, and call log as windows in a dedicated tab.
 Calling `open()` again focuses that tab and resets the pane sizes. Closing DBee returns to the
@@ -223,9 +233,14 @@ Here are a few steps to quickly get started:
       group or connection, or run a table / view's `List` query. Enable mouse support with
       `:set mouse=a` if needed.
     - Press `r` to manually refresh the tree.
+    - Press `?` to show all configured drawer keybindings in a popup. Press `q`, `<Esc>`, or `?`
+      to close it.
 
   - Connections:
 
+    - Press `a` on a source or one of its descendants to add a connection (if supported).
+    - Press `e` on a connection node to edit its source file (if supported). This key does not
+      apply to the connection's schema, table, or column nodes.
     - Press `cw` to edit the connection
     - Press `dd` to delete it (if source supports saving, it's also removed from there - see more
       below.)
@@ -245,10 +260,6 @@ Here are a few steps to quickly get started:
     - Press `cw` to rename the scratchpad.
     - Press `dd` to delete it (also from disk).
     - Pressing `<CR>` on an existing scratchpad in the drawer will open it in the editor pane.
-
-  - Help:
-
-    - Just view the key bindings.
 
 - Once you selected the connection and created a scratchpad, you can navigate to the editor pane
   (top-right by default) and start writing queries. In editor pane, you can use the following
@@ -366,26 +377,44 @@ The above sources are just built-ins. Here is a short description of them:
 - `FileSource` loads connections from a given json file. It also supports editing and adding
   connections interactively
 
-If the source supports saving and editing you can add connections manually using the "add" item in
-the drawer. Fill in the values and write the buffer (`:w`) to save the connection. By default, this
+The default file source is displayed as `connections` in the drawer. If the source supports saving
+and editing you can add connections manually by pressing `a` on the source or one of its descendants.
+Fill in the values and write the buffer (`:w`) to save the connection. By default, this
 will save the connection to the global connections file and will persist over restarts (because
 default `FileSource` supports saving)
 
-Another option is to use "edit" item in the tree and just edit the source manually.
+Another option is to press `e` on a connection node and edit its source file manually.
 
 If you aren't satisfied with the default capabilities, you can implement your own source. You just
 need to fill the `Source` interface and pass it to config at setup (`:h dbee.sources`).
 
 #### Metadata cache
 
-Opening a connection for the first time fetches its tables, views, and columns and stores a complete
+Opening a connection for the first time fetches its tables, views, columns, and available DDL and stores a complete
 snapshot in `stdpath("state") .. "/dbee/metadata.sqlite3"`. All connections share this one file;
 snapshots are compressed MessagePack blobs indexed by connection and selected database. Later opens,
-including after restarting Neovim, reuse the snapshot without fetching table or column metadata.
+including after restarting Neovim, reuse the snapshot without fetching metadata or DDL again.
 
-The first fetch can take longer for large databases because it collects all column schemas. BigQuery
-uses the table metadata API rather than executing a SQL query per table. The cache has no automatic
-expiry.
+The first fetch can take longer for large databases because it collects all column schemas and DDL.
+BigQuery uses the table metadata API for columns and one `INFORMATION_SCHEMA.TABLES` query per dataset
+for DDL. These DDL queries use GoogleSQL and require permission to run query jobs; they respect
+`max-bytes-billed`. The cache has no automatic expiry. Older snapshots without DDL are rebuilt once.
+
+Native table/view DDL collection is supported for BigQuery, MySQL, SQLite, DuckDB, ClickHouse,
+Oracle, Redshift, and Databricks. Other adapters continue to cache structure and columns. You can
+provide a custom `DDL` table helper for another database type; it must return DDL text in the first
+column (or a column named `ddl`). Rows are joined with newlines. DDL queries run during metadata
+collection and do not enter query history or overwrite cached query results.
+
+Read a cached definition from Lua:
+
+```lua
+local ddl = require("dbee").api.core.connection_get_ddl("connection-id", {
+  schema = "public", table = "users", materialization = "table",
+})
+```
+
+This raises an error if the database does not supply DDL for the object.
 
 Press `R` on a connection or any table/column beneath it to fetch a new snapshot. `r` only redraws the
 drawer using cached data. You can also refresh the active connection from Lua:

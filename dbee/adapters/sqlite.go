@@ -58,6 +58,7 @@ func (s *SQLite) Connect(url string) (core.Driver, error) {
 
 func (*SQLite) GetHelpers(opts *core.TableOptions) map[string]string {
 	return map[string]string{
+		"DDL":          "SELECT sql AS ddl FROM sqlite_schema WHERE name = " + ddlLiteral(opts.Table) + " AND type IN ('table', 'view')",
 		"List":         fmt.Sprintf("SELECT * FROM %q LIMIT 500", opts.Table),
 		"Columns":      fmt.Sprintf("PRAGMA table_info('%s')", opts.Table),
 		"Indexes":      fmt.Sprintf("SELECT * FROM pragma_index_list('%s')", opts.Table),
