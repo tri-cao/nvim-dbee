@@ -146,3 +146,32 @@ func TestCacheRejectsRefreshWithoutDDLMap(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, want, got)
 }
+
+func TestCacheScopedUpdatePersistsAndPreservesFailedSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "metadata.sqlite3")
+	cache, err := Open(path)
+	require.NoError(t, err)
+	old := testSnapshot("users")
+	_, err = cache.Get("connection", false, func() (*core.Metadata, error) { return old, nil })
+	require.NoError(t, err)
+	fresh := testSnapshot("events")
+	merged, err := cache.Update("connection", nil, func(previous *core.Metadata) (*core.Metadata, error) {
+		return core.MergeMetadataScope(previous, fresh, []core.MetadataNode{{Name: "events", Schema: "public", Type: "table"}}), nil
+	})
+	require.NoError(t, err)
+	require.Len(t, merged.Columns, 2)
+	_, err = cache.Update("connection", nil, func(*core.Metadata) (*core.Metadata, error) {
+		return nil, errors.New("permission denied")
+	})
+	require.ErrorContains(t, err, "permission denied")
+	got, err := cache.Get("connection", false, nil)
+	require.NoError(t, err)
+	require.Equal(t, merged, got)
+	require.NoError(t, cache.Close())
+	cache, err = Open(path)
+	require.NoError(t, err)
+	defer cache.Close()
+	got, err = cache.Get("connection", false, nil)
+	require.NoError(t, err)
+	require.Equal(t, merged, got)
+}

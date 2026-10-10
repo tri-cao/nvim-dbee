@@ -172,3 +172,79 @@ func TestBigQueryDDLBatchesByDataset(t *testing.T) {
 		})
 	}
 }
+
+func TestBigQueryScopedMetadataAvoidsOtherDatasetsAndTables(t *testing.T) {
+	for _, tableOnly := range []bool{false, true} {
+		name := "dataset"
+		if tableOnly {
+			name = "table"
+		}
+		t.Run(name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				ref := map[string]string{"projectId": "test-project", "datasetId": "analytics", "tableId": "events"}
+				switch r.URL.Path {
+				case "/projects/test-project/datasets/analytics/tables":
+					if tableOnly {
+						t.Error("table refresh listed sibling tables")
+					}
+					_ = json.NewEncoder(w).Encode(map[string]any{"tables": []any{map[string]any{"tableReference": ref}}})
+				case "/projects/test-project/datasets/analytics/tables/events":
+					_ = json.NewEncoder(w).Encode(map[string]any{"tableReference": ref, "schema": map[string]any{
+						"fields": []any{map[string]string{"name": "id", "type": "INTEGER"}},
+					}})
+				case "/projects/test-project/queries":
+					var request struct {
+						Query      string `json:"query"`
+						Parameters []struct {
+							Name  string `json:"name"`
+							Value struct {
+								Values []struct {
+									Value string `json:"value"`
+								} `json:"arrayValues"`
+							} `json:"parameterValue"`
+						} `json:"queryParameters"`
+					}
+					if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+						t.Error(err)
+						return
+					}
+					if request.Query != "SELECT table_name, ddl FROM `test-project.analytics.INFORMATION_SCHEMA.TABLES` WHERE table_name IN UNNEST(@table_names)" {
+						t.Errorf("unscoped DDL query: %s", request.Query)
+					}
+					if len(request.Parameters) != 1 || request.Parameters[0].Name != "table_names" || len(request.Parameters[0].Value.Values) != 1 || request.Parameters[0].Value.Values[0].Value != "events" {
+						t.Errorf("DDL did not target only events: %+v", request.Parameters)
+					}
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"jobComplete": true, "totalRows": "1",
+						"jobReference": map[string]string{"projectId": "test-project", "jobId": "scoped-ddl"},
+						"schema": map[string]any{"fields": []any{
+							map[string]string{"name": "table_name", "type": "STRING"}, map[string]string{"name": "ddl", "type": "STRING"},
+						}},
+						"rows": []any{map[string]any{"f": []any{map[string]string{"v": "events"}, map[string]string{"v": "CREATE TABLE events (id INT64)"}}}},
+					})
+				default:
+					t.Errorf("scoped refresh contacted another resource: %s", r.URL)
+					w.WriteHeader(http.StatusBadRequest)
+				}
+			}))
+			defer server.Close()
+			client, err := bigquery.NewClient(context.Background(), "test-project", option.WithEndpoint(server.URL+"/"), option.WithoutAuthentication())
+			require.NoError(t, err)
+			defer client.Close()
+			driver := &bigQueryDriver{c: client}
+			path := []core.MetadataNode{{Name: "analytics", Schema: "analytics", Type: ""}}
+			if tableOnly {
+				path = append(path, core.MetadataNode{Name: "events", Schema: "analytics", Type: "table"})
+			}
+			structure, err := driver.StructureScope(path)
+			require.NoError(t, err)
+			snapshot, err := driver.MetadataForStructure(structure)
+			require.NoError(t, err)
+			require.Len(t, snapshot.Columns, 1)
+			ddls, err := driver.MetadataDDLScope(snapshot.Structure)
+			require.NoError(t, err)
+			require.Len(t, ddls, 1)
+		})
+	}
+}

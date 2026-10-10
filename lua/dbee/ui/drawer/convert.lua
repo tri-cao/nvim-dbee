@@ -32,8 +32,9 @@ end
 local function connection_nodes(handler, conn, result)
   ---@param structs DBStructure[]
   ---@param parent_id string
+  ---@param parent_path? { name: string, schema: string, type: string }[]
   ---@return DrawerUINode[]
-  local function to_tree_nodes(structs, parent_id)
+  local function to_tree_nodes(structs, parent_id, parent_path)
     if not structs or structs == vim.NIL then
       return {}
     end
@@ -46,13 +47,16 @@ local function connection_nodes(handler, conn, result)
     local nodes = {}
 
     for _, struct in ipairs(structs) do
+      local path = vim.deepcopy(parent_path or {})
+      path[#path + 1] = { name = struct.name, schema = struct.schema or "", type = struct.type }
       local node_id = (parent_id or "") .. "__connection_" .. struct.name .. struct.schema .. struct.type .. "__"
       local node = NuiTree.Node({
         id = node_id,
         name = struct.name,
         schema = struct.schema,
         type = struct.type,
-      }, to_tree_nodes(struct.children, node_id)) --[[@as DrawerUINode]]
+        metadata_scope = { path = path, node_id = node_id },
+      }, to_tree_nodes(struct.children, node_id, path)) --[[@as DrawerUINode]]
 
       if struct.type == "table" or struct.type == "view" then
         local table_opts = { table = struct.name, schema = struct.schema, materialization = struct.type }
@@ -89,6 +93,7 @@ local function connection_nodes(handler, conn, result)
       id = conn.id .. "_database_switch__",
       name = current_db,
       type = "database_switch",
+      metadata_scope = { path = {}, node_id = conn.id .. "_database_switch__" },
       action_1 = function(cb, select)
         select {
           title = "Select a Database",
@@ -105,6 +110,8 @@ local function connection_nodes(handler, conn, result)
 
   return nodes
 end
+
+M.connection_nodes = connection_nodes
 
 ---@param handler Handler
 ---@param result ResultUI

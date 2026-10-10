@@ -60,6 +60,21 @@ func Open(path string) (*Cache, error) {
 func (c *Cache) Get(key string, refresh bool, load func() (*core.Metadata, error)) (*core.Metadata, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.get(key, refresh, load)
+}
+
+// Update commits a scoped refresh atomically with respect to other cache users.
+func (c *Cache) Update(key string, load func() (*core.Metadata, error), update func(*core.Metadata) (*core.Metadata, error)) (*core.Metadata, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	previous, err := c.get(key, false, load)
+	if err != nil {
+		return nil, err
+	}
+	return c.get(key, true, func() (*core.Metadata, error) { return update(previous) })
+}
+
+func (c *Cache) get(key string, refresh bool, load func() (*core.Metadata, error)) (*core.Metadata, error) {
 	if !refresh {
 		if snapshot, ok := c.memory[key]; ok {
 			return snapshot, nil

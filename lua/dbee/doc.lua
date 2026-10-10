@@ -95,6 +95,10 @@
 ---@field schema string? parent schema
 ---@field children DBStructure[]? child layout nodes
 
+---@class MetadataScope
+---@field path { name: string, schema: string, type: string }[] path from the connection to the selected node
+---@field node_id string drawer node displaying refresh progress
+
 ---@divider -
 ---@tag dbee.ref.types.events
 ---@brief [[
@@ -106,7 +110,7 @@
 ---| '"call_state_changed"' {call}
 ---| '"current_connection_changed"' {conn_id}
 ---| '"database_selected"' {conn_id, database_name}
----| '"metadata_refresh_state_changed"' {conn_id, refreshing, error}
+---| '"metadata_refresh_state_changed"' {conn_id, node_id, refreshing, error}
 
 ---Available editor events.
 ---@alias editor_event_name

@@ -54,16 +54,21 @@ func (eb *eventBus) CurrentConnectionChanged(id core.ConnectionID) {
 	eb.callLua("current_connection_changed", data)
 }
 
-func (eb *eventBus) MetadataRefreshStateChanged(id core.ConnectionID, refreshing bool, err error) {
+func (eb *eventBus) MetadataRefreshStateChanged(id core.ConnectionID, scope *core.MetadataScope, refreshing bool, err error) {
 	errMsg := "nil"
 	if err != nil {
 		errMsg = fmt.Sprintf("%q", err.Error())
 	}
+	nodeID := string(id)
+	if scope != nil && scope.NodeID != "" {
+		nodeID = scope.NodeID
+	}
 	eb.callLua("metadata_refresh_state_changed", fmt.Sprintf(`{
 		conn_id = %q,
+		node_id = %q,
 		refreshing = %t,
 		error = %s,
-	}`, id, refreshing, errMsg))
+	}`, id, nodeID, refreshing, errMsg))
 }
 
 // DatabaseSelected is called when the selected database of a connection is changed.

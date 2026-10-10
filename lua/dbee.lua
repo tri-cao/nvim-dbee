@@ -68,10 +68,13 @@ function dbee.search(pattern)
 end
 
 ---Refresh cached tables and columns in the background, then redraw the drawer.
----@param id? connection_id defaults to the active connection
+---@param id? connection_id defaults to the drawer selection or active connection
 function dbee.refresh_metadata(id)
   -- Initialize the drawer's refresh listener before starting the background job.
-  require("dbee.api.state").drawer()
+  local drawer = require("dbee.api.state").drawer()
+  if not id and vim.api.nvim_get_current_buf() == drawer.bufnr then
+    return drawer:do_action("refresh_metadata")
+  end
   api.core.connection_refresh_metadata_async(id)
 end
 

@@ -104,7 +104,7 @@ config.default = {
       { key = "e", mode = "n", action = "edit_source" },
       -- manually refresh drawer
       { key = "r", mode = "n", action = "refresh" },
-      -- reload cached tables and columns for the connection under the cursor
+      -- reload metadata for the connection, schema/dataset, or table under the cursor
       { key = "R", mode = "n", action = "refresh_metadata" },
       -- actions perform different stuff depending on the node:
       -- action_1 toggles a connection/schema, opens a note, or runs a table's List query

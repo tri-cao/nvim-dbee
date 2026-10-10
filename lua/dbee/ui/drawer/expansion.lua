@@ -41,8 +41,9 @@ end
 
 -- gets an expansion config to restore the expansion on new nodes
 ---@param tree NuiTree
+---@param root_id? string restrict the expansion map to this subtree
 ---@return table<string, boolean>
-function M.get(tree)
+function M.get(tree, root_id)
   ---@type table<string, boolean>
   local nodes = {}
 
@@ -58,7 +59,8 @@ function M.get(tree)
     end
   end
 
-  for _, node in ipairs(tree:get_nodes()) do
+  local root = root_id and tree:get_node(root_id)
+  for _, node in ipairs(root_id and { root } or tree:get_nodes()) do
     process(node)
   end
 

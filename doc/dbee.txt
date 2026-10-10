@@ -666,8 +666,12 @@ Read a definition from the persistent cache:
 This raises an error if DDL is unavailable. DDL collection does not enter query
 history or overwrite cached query results.
 
-Press R on a connection or a descendant to fetch new metadata and DDL; r only
-redraws the drawer from cache. You can also use require("dbee").refresh_metadata().
+Press R to refresh metadata and DDL for the selected connection,
+database/dataset/schema, or table/view. Columns refresh their parent table.
+The selected node shows a spinner; other cached metadata stays unchanged.
+r only redraws the drawer from cache. You can also use
+require("dbee").refresh_metadata(), which follows the drawer selection when
+called there and refreshes the active connection elsewhere.
 A failed refresh preserves the previous snapshot. The cache has no automatic
 expiry.
 

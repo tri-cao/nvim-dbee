@@ -419,9 +419,11 @@ local ddl = require("dbee").api.core.connection_get_ddl("connection-id", {
 
 This raises an error if the database does not supply DDL for the object.
 
-Press `R` on a connection or any table/column beneath it to fetch a new snapshot in the background. A
-spinner after the connection name shows the refresh progress. `r` only redraws the drawer using cached
-data. You can also refresh the active connection from Lua:
+Press `R` in the drawer to refresh the selected connection, database/dataset/schema, or table/view in
+the background. A column refreshes its parent table. Only metadata within that scope is replaced;
+other cached schemas and tables stay unchanged. A spinner after the selected node shows progress.
+`r` only redraws the drawer using cached data. From Lua, `refresh_metadata()` follows the drawer
+selection when called there and refreshes the active connection elsewhere:
 
 ```lua
 require("dbee").refresh_metadata()

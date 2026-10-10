@@ -168,16 +168,18 @@ func mountEndpoints(p *plugin.Plugin, h *handler.Handler) {
 	})
 
 	p.RegisterEndpoint("DbeeConnectionRefreshMetadata", func(args *struct {
-		ID core.ConnectionID `msgpack:",array"`
+		ID    core.ConnectionID `msgpack:",array"`
+		Scope *core.MetadataScope
 	}) (any, error) {
-		structure, err := h.ConnectionRefreshMetadata(args.ID)
+		structure, err := h.ConnectionRefreshMetadata(args.ID, args.Scope)
 		return handler.WrapStructures(structure), err
 	})
 
 	p.RegisterEndpoint("DbeeConnectionRefreshMetadataAsync", func(args *struct {
-		ID core.ConnectionID `msgpack:",array"`
+		ID    core.ConnectionID `msgpack:",array"`
+		Scope *core.MetadataScope
 	}) error {
-		return h.ConnectionRefreshMetadataAsync(args.ID)
+		return h.ConnectionRefreshMetadataAsync(args.ID, args.Scope)
 	})
 
 	p.RegisterEndpoint(

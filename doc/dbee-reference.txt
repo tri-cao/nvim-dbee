@@ -46,10 +46,12 @@ dbee.refresh_metadata({id?})                              *dbee.refresh_metadata
     The previous snapshot is preserved if the refresh fails.
 
     Parameters: ~
-        {id} (nil|connection_id) Defaults to the active connection.
+        {id} (nil|connection_id) Defaults to the selected drawer node when in
+             the drawer, otherwise the active connection.
 
     Snapshots are stored in stdpath("state") .. "/dbee/metadata.sqlite3".
-    Press R on a connection or its descendants to refresh from the drawer.
+    Press R to refresh the selected connection, database/dataset/schema, or
+    table/view. Columns refresh their parent table.
 
 
 dbee.execute({query})                                             *dbee.execute*

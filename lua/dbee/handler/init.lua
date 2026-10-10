@@ -229,8 +229,9 @@ end
 
 ---@param id connection_id
 ---@return DBStructure[]
-function Handler:connection_refresh_metadata(id)
-  local ret = vim.fn.DbeeConnectionRefreshMetadata(id)
+---@param scope? MetadataScope
+function Handler:connection_refresh_metadata(id, scope)
+  local ret = vim.fn.DbeeConnectionRefreshMetadata(id, scope or vim.NIL)
   if not ret or ret == vim.NIL then
     return {}
   end
@@ -238,8 +239,9 @@ function Handler:connection_refresh_metadata(id)
 end
 
 ---@param id connection_id
-function Handler:connection_refresh_metadata_async(id)
-  local ok, err = pcall(vim.fn.DbeeConnectionRefreshMetadataAsync, id)
+---@param scope? MetadataScope
+function Handler:connection_refresh_metadata_async(id, scope)
+  local ok, err = pcall(vim.fn.DbeeConnectionRefreshMetadataAsync, id, scope or vim.NIL)
   if not ok then
     if tostring(err):find("unknown request method: 0:function:DbeeConnectionRefreshMetadataAsync", 1, true) then
       error(

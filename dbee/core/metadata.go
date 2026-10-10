@@ -51,6 +51,11 @@ func (c *Connection) GetMetadata() (*Metadata, error) {
 	if metadata == nil || metadata.Columns == nil {
 		return nil, fmt.Errorf("incomplete metadata snapshot")
 	}
+	return c.collectDDL(metadata)
+}
+
+func (c *Connection) collectDDL(metadata *Metadata) (*Metadata, error) {
+	var err error
 	if metadata.DDL != nil {
 		return metadata, nil
 	}
@@ -93,6 +98,10 @@ func (c *Connection) collectColumns() (*Metadata, error) {
 	if err != nil {
 		return nil, err
 	}
+	return c.columnsForStructure(structure)
+}
+
+func (c *Connection) columnsForStructure(structure []*Structure) (*Metadata, error) {
 	metadata := &Metadata{Structure: structure, Columns: make(map[string][]*Column)}
 	var collect func([]*Structure) error
 	collect = func(nodes []*Structure) error {

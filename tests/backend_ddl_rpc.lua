@@ -54,6 +54,48 @@ else
   assert(events[2].conn_id == id and not events[2].refreshing and not events[2].error, "async refresh failed")
   assert(handler:connection_get_ddl(id, table_opts) == ddl, "async refresh lost DDL")
 
+  -- A table refresh changes only its columns/DDL, even if sibling views also change.
+  local changed = vim.system({ "sqlite3", database,
+    "ALTER TABLE users ADD COLUMN email TEXT; DROP VIEW active_users; "
+      .. "CREATE VIEW active_users AS SELECT id, email FROM users; CREATE TABLE added (id INTEGER);",
+  }, { text = true }):wait()
+  assert(changed.code == 0, changed.stderr)
+  local scope = {
+    node_id = "users-node",
+    path = {
+      { name = "sqlite_schema", schema = "sqlite_schema", type = "schema" },
+      { name = "users", schema = "sqlite_schema", type = "table" },
+    },
+  }
+  events = {}
+  handler:connection_refresh_metadata_async(id, scope)
+  assert(vim.wait(5000, function() return #events == 2 end, 10), "scoped refresh did not finish")
+  assert(events[1].node_id == "users-node" and events[2].node_id == "users-node", "scoped progress targeted the connection")
+  assert(not events[2].error, events[2].error)
+  assert(handler:connection_get_ddl(id, table_opts):find("email", 1, true), "table DDL was not refreshed")
+  assert(#handler:connection_get_columns(id, table_opts) == 3, "table columns were not refreshed")
+  local view_opts = { schema = "sqlite_schema", table = "active_users", materialization = "view" }
+  assert(handler:connection_get_ddl(id, view_opts) == view, "table refresh changed sibling DDL")
+  assert(#handler:connection_get_structure(id)[1].children == 2, "table refresh changed sibling structure")
+
+  -- Refreshing the schema picks up additions and changed sibling metadata.
+  scope.path[2] = nil
+  handler:connection_refresh_metadata(id, scope)
+  assert(#handler:connection_get_structure(id)[1].children == 3, "schema refresh missed a new table")
+  assert(handler:connection_get_ddl(id, view_opts):find("email", 1, true), "schema refresh missed changed view DDL")
+  -- Keep the single-argument RPC working for callers using the original API.
+  assert(#vim.fn.DbeeConnectionRefreshMetadata(id) > 0, "legacy refresh RPC lost compatibility")
+
+  -- Dropped tables lose their cached columns and DDL without touching sibling views.
+  changed = vim.system({ "sqlite3", database, "DROP TABLE users;" }, { text = true }):wait()
+  assert(changed.code == 0, changed.stderr)
+  scope.path[2] = { name = "users", schema = "sqlite_schema", type = "table" }
+  local sibling_ddl = handler:connection_get_ddl(id, view_opts)
+  handler:connection_refresh_metadata(id, scope)
+  assert(not pcall(handler.connection_get_columns, handler, id, table_opts), "dropped table retained cached columns")
+  assert(not pcall(handler.connection_get_ddl, handler, id, table_opts), "dropped table retained cached DDL")
+  assert(handler:connection_get_ddl(id, view_opts) == sibling_ddl, "dropped-table refresh removed sibling DDL")
+
   -- A failed background refresh must also emit completion, including the error.
   local failed_id = vim.fn.DbeeCreateConnection {
     id = "failed-metadata-rpc",

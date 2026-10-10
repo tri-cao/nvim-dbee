@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -280,7 +281,7 @@ func (h *Handler) ConnectionGetDDL(connID core.ConnectionID, opts *core.TableOpt
 	return ddl, nil
 }
 
-func (h *Handler) connectionMetadata(c *core.Connection, refresh bool) (*core.Metadata, error) {
+func (h *Handler) connectionMetadata(c *core.Connection, refresh bool, scopes ...*core.MetadataScope) (*core.Metadata, error) {
 	h.metadataMu.Lock()
 	defer h.metadataMu.Unlock()
 	if h.metadataCache == nil {
@@ -294,15 +295,28 @@ func (h *Handler) connectionMetadata(c *core.Connection, refresh bool) (*core.Me
 		}
 		h.metadataCache = cache
 	}
+	if refresh && len(scopes) > 0 && scopes[0] != nil && len(scopes[0].Path) > 0 {
+		scope := scopes[0]
+		return h.metadataCache.Update(c.MetadataCacheKey(), c.GetMetadata, func(previous *core.Metadata) (*core.Metadata, error) {
+			fresh, err := c.GetMetadataScope(scope)
+			if err != nil {
+				return nil, err
+			}
+			if fresh == nil || fresh.Columns == nil || fresh.DDL == nil {
+				return nil, errors.New("incomplete metadata snapshot")
+			}
+			return core.MergeMetadataScope(previous, fresh, scope.Path), nil
+		})
+	}
 	return h.metadataCache.Get(c.MetadataCacheKey(), refresh, c.GetMetadata)
 }
 
-func (h *Handler) ConnectionRefreshMetadata(connID core.ConnectionID) ([]*core.Structure, error) {
+func (h *Handler) ConnectionRefreshMetadata(connID core.ConnectionID, scopes ...*core.MetadataScope) ([]*core.Structure, error) {
 	c, ok := h.lookupConnection[connID]
 	if !ok {
 		return nil, fmt.Errorf("unknown connection with id: %q", connID)
 	}
-	snapshot, err := h.connectionMetadata(c, true)
+	snapshot, err := h.connectionMetadata(c, true, scopes...)
 	if err != nil {
 		return nil, fmt.Errorf("refresh metadata: %w", err)
 	}
@@ -310,24 +324,37 @@ func (h *Handler) ConnectionRefreshMetadata(connID core.ConnectionID) ([]*core.S
 }
 
 // ConnectionRefreshMetadataAsync refreshes the snapshot without blocking the UI.
-func (h *Handler) ConnectionRefreshMetadataAsync(connID core.ConnectionID) error {
+func (h *Handler) ConnectionRefreshMetadataAsync(connID core.ConnectionID, scopes ...*core.MetadataScope) error {
 	c, ok := h.lookupConnection[connID]
 	if !ok {
 		return fmt.Errorf("unknown connection with id: %q", connID)
 	}
-	if _, loaded := h.metadataRefreshes.LoadOrStore(connID, true); loaded {
+	var scope *core.MetadataScope
+	if len(scopes) > 0 {
+		scope = scopes[0]
+	}
+	// Requests for the same subtree share one job; distinct subtrees may queue.
+	key := string(connID)
+	if scope != nil {
+		path, err := json.Marshal(scope.Path)
+		if err != nil {
+			return err
+		}
+		key += string(path)
+	}
+	if _, loaded := h.metadataRefreshes.LoadOrStore(key, true); loaded {
 		return nil
 	}
-	h.events.MetadataRefreshStateChanged(connID, true, nil)
+	h.events.MetadataRefreshStateChanged(connID, scope, true, nil)
 	h.metadataJobs.Add(1)
 	go func() {
 		defer h.metadataJobs.Done()
-		_, err := h.connectionMetadata(c, true)
+		_, err := h.connectionMetadata(c, true, scope)
 		if err != nil {
 			err = fmt.Errorf("refresh metadata: %w", err)
 		}
-		h.events.MetadataRefreshStateChanged(connID, false, err)
-		h.metadataRefreshes.Delete(connID)
+		h.events.MetadataRefreshStateChanged(connID, scope, false, err)
+		h.metadataRefreshes.Delete(key)
 	}()
 	return nil
 }

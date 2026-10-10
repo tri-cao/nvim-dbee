@@ -19,6 +19,7 @@ local expansion = require("dbee.ui.drawer.expansion")
 ---@field action_add_connection? drawer_node_action add a connection to this source
 ---@field action_edit_source? drawer_node_action edit the source file for this connection
 ---@field lazy_children? fun():DrawerUINode[] lazy loaded child nodes
+---@field metadata_scope? MetadataScope subtree to refresh
 
 ---@class DrawerUI
 ---@field private tree NuiTree
@@ -33,7 +34,7 @@ local expansion = require("dbee.ui.drawer.expansion")
 ---@field private current_note_id? note_id current active note
 ---@field private window_options table<string, any> a table of window options.
 ---@field private buffer_options table<string, any> a table of buffer options.
----@field private refreshing table<connection_id, boolean>
+---@field private refreshing table<string, boolean>
 ---@field private spinner string[]
 ---@field private spinner_index integer
 ---@field private spinner_timer? integer
@@ -138,9 +139,10 @@ function DrawerUI:stop_metadata_spinner()
 end
 
 ---@private
----@param data { conn_id: connection_id, refreshing: boolean, error?: string }
+---@param data { conn_id: connection_id, node_id?: string, refreshing: boolean, error?: string }
 function DrawerUI:on_metadata_refresh_state_changed(data)
-  self.refreshing[data.conn_id] = data.refreshing or nil
+  local node_id = data.node_id or data.conn_id
+  self.refreshing[node_id] = data.refreshing or nil
   if data.error then
     vim.notify(data.error, vim.log.levels.ERROR, { title = "DBee" })
   end
@@ -165,7 +167,7 @@ function DrawerUI:on_metadata_refresh_state_changed(data)
     if data.error then
       self.tree:render()
     else
-      self:refresh()
+      self:refresh_connection(data.conn_id)
     end
   end
 end
@@ -242,7 +244,7 @@ function DrawerUI:create_tree(bufnr)
         line:append(string.gsub(node.name, "\n", " "), candy.text_highlight)
       end
 
-      if node.type == "connection" and self.refreshing[node.id] then
+      if self.refreshing[node.id] then
         line:append(" " .. self.spinner[self.spinner_index], "DiagnosticInfo")
       end
 
@@ -367,6 +369,12 @@ function DrawerUI:get_actions()
     end,
     refresh_metadata = function()
       local node = self.tree:get_node()
+      -- Columns inherit the scope of their table; structural nodes carry their own.
+      while node and not node.metadata_scope and node.type ~= "connection" do
+        local parent_id = node:get_parent_id()
+        node = parent_id and self.tree:get_node(parent_id) or nil
+      end
+      local scope = node and node.metadata_scope
       while node and node.type ~= "connection" do
         local parent_id = node:get_parent_id()
         node = parent_id and self.tree:get_node(parent_id) or nil
@@ -374,7 +382,7 @@ function DrawerUI:get_actions()
       if not node then
         return
       end
-      self.handler:connection_refresh_metadata_async(node.id)
+      self.handler:connection_refresh_metadata_async(node.id, scope)
     end,
     action_1 = function()
       local node = self.tree:get_node() --[[@as DrawerUINode]]
@@ -454,6 +462,23 @@ function DrawerUI:do_action(action)
     error("unknown action: " .. action)
   end
   act()
+end
+
+---Reload only this connection's drawer nodes from the updated cache.
+---@param id connection_id
+function DrawerUI:refresh_connection(id)
+  local node = self.tree:get_node(id)
+  if not node then
+    return
+  end
+  if node:is_expanded() or node:has_children() then
+    local exp = expansion.get(self.tree, id)
+    -- The connection itself survives set_nodes; its children are already loaded below.
+    exp[id] = nil
+    self.tree:set_nodes(convert.connection_nodes(self.handler, { id = id }, self.result), id)
+    expansion.set(self.tree, exp)
+  end
+  self.tree:render()
 end
 
 ---Refreshes the tree.

@@ -132,7 +132,8 @@ end
 ---The previous snapshot remains available if the refresh fails.
 ---@param id? connection_id defaults to the active connection
 ---@return DBStructure[]
-function core.connection_refresh_metadata(id)
+---@param scope? MetadataScope
+function core.connection_refresh_metadata(id, scope)
   if not id then
     local conn = core.get_current_connection()
     if not conn then
@@ -140,12 +141,13 @@ function core.connection_refresh_metadata(id)
     end
     id = conn.id
   end
-  return state.handler():connection_refresh_metadata(id)
+  return state.handler():connection_refresh_metadata(id, scope)
 end
 
 ---Refresh metadata in the background. Completion is reported through metadata_refresh_state_changed.
 ---@param id? connection_id defaults to the active connection
-function core.connection_refresh_metadata_async(id)
+---@param scope? MetadataScope
+function core.connection_refresh_metadata_async(id, scope)
   if not id then
     local conn = core.get_current_connection()
     if not conn then
@@ -153,7 +155,7 @@ function core.connection_refresh_metadata_async(id)
     end
     id = conn.id
   end
-  state.handler():connection_refresh_metadata_async(id)
+  state.handler():connection_refresh_metadata_async(id, scope)
 end
 
 ---Get columns of a table
