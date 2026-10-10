@@ -30,6 +30,7 @@ return function()
     { type = "function", name = "DbeeConnectionGetStructure", sync = true, opts = vim.empty_dict() },
     { type = "function", name = "DbeeConnectionListDatabases", sync = true, opts = vim.empty_dict() },
     { type = "function", name = "DbeeConnectionRefreshMetadata", sync = true, opts = vim.empty_dict() },
+    { type = "function", name = "DbeeConnectionRefreshMetadataAsync", sync = true, opts = vim.empty_dict() },
     { type = "function", name = "DbeeConnectionSelectDatabase", sync = true, opts = vim.empty_dict() },
     { type = "function", name = "DbeeCreateConnection", sync = true, opts = vim.empty_dict() },
     { type = "function", name = "DbeeDeleteConnection", sync = true, opts = vim.empty_dict() },

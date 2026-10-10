@@ -238,6 +238,21 @@ function Handler:connection_refresh_metadata(id)
 end
 
 ---@param id connection_id
+function Handler:connection_refresh_metadata_async(id)
+  local ok, err = pcall(vim.fn.DbeeConnectionRefreshMetadataAsync, id)
+  if not ok then
+    if tostring(err):find("unknown request method: 0:function:DbeeConnectionRefreshMetadataAsync", 1, true) then
+      error(
+        'DBee backend is outdated: missing DbeeConnectionRefreshMetadataAsync. Run :lua require("dbee").install("go"), '
+          .. "wait for installation to finish, then restart Neovim.",
+        0
+      )
+    end
+    error(err, 0)
+  end
+end
+
+---@param id connection_id
 ---@param opts { table: string, schema: string, materialization: string }
 ---@return Column[]
 function Handler:connection_get_columns(id, opts)

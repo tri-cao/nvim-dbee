@@ -34,6 +34,8 @@ type Handler struct {
 	currentConnectionID core.ConnectionID
 	metadataCache       *metadata.Cache
 	metadataMu          sync.Mutex
+	metadataRefreshes   sync.Map
+	metadataJobs        sync.WaitGroup
 }
 
 func New(vim *nvim.Nvim, logger *plugin.Logger) *Handler {
@@ -62,6 +64,8 @@ func New(vim *nvim.Nvim, logger *plugin.Logger) *Handler {
 }
 
 func (h *Handler) Close() {
+	h.metadataJobs.Wait()
+
 	// wait for unfinished calls
 	for _, c := range h.lookupCall {
 		select {
@@ -303,6 +307,29 @@ func (h *Handler) ConnectionRefreshMetadata(connID core.ConnectionID) ([]*core.S
 		return nil, fmt.Errorf("refresh metadata: %w", err)
 	}
 	return snapshot.Structure, nil
+}
+
+// ConnectionRefreshMetadataAsync refreshes the snapshot without blocking the UI.
+func (h *Handler) ConnectionRefreshMetadataAsync(connID core.ConnectionID) error {
+	c, ok := h.lookupConnection[connID]
+	if !ok {
+		return fmt.Errorf("unknown connection with id: %q", connID)
+	}
+	if _, loaded := h.metadataRefreshes.LoadOrStore(connID, true); loaded {
+		return nil
+	}
+	h.events.MetadataRefreshStateChanged(connID, true, nil)
+	h.metadataJobs.Add(1)
+	go func() {
+		defer h.metadataJobs.Done()
+		_, err := h.connectionMetadata(c, true)
+		if err != nil {
+			err = fmt.Errorf("refresh metadata: %w", err)
+		}
+		h.events.MetadataRefreshStateChanged(connID, false, err)
+		h.metadataRefreshes.Delete(connID)
+	}()
+	return nil
 }
 
 func (h *Handler) ConnectionListDatabases(connID core.ConnectionID) (current string, available []string, err error) {

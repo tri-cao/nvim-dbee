@@ -38,7 +38,44 @@ else
   })
   assert(view:find("CREATE VIEW active_users", 1, true), "view DDL RPC failed")
   assert(#handler:connection_get_calls(id) == 0, "DDL preview created query history")
+
+  local events = {}
+  handler:register_event_listener("metadata_refresh_state_changed", function(data)
+    events[#events + 1] = data
+  end)
+  handler:connection_refresh_metadata_async(id)
+  assert(
+    vim.wait(5000, function()
+      return #events == 2
+    end, 10),
+    "async refresh did not finish"
+  )
+  assert(events[1].conn_id == id and events[1].refreshing, "async refresh did not emit its start event")
+  assert(events[2].conn_id == id and not events[2].refreshing and not events[2].error, "async refresh failed")
+  assert(handler:connection_get_ddl(id, table_opts) == ddl, "async refresh lost DDL")
+
+  -- A failed background refresh must also emit completion, including the error.
+  local failed_id = vim.fn.DbeeCreateConnection {
+    id = "failed-metadata-rpc",
+    name = "Failed metadata",
+    type = "postgres",
+    url = "postgres://test:test@127.0.0.1:1/test?sslmode=disable&connect_timeout=1",
+  }
+  events = {}
+  handler:connection_refresh_metadata_async(failed_id)
+  assert(
+    vim.wait(5000, function()
+      return #events == 2
+    end, 10),
+    "failed async refresh did not finish"
+  )
+  assert(events[1].conn_id == failed_id and events[1].refreshing, "failed refresh did not emit its start event")
+  assert(events[2].conn_id == failed_id and not events[2].refreshing and events[2].error, "refresh error was lost")
+  vim.fn.DbeeDeleteConnection(failed_id)
+  local ok, err = pcall(handler.connection_refresh_metadata_async, handler, "missing")
+  assert(not ok and tostring(err):find("unknown connection", 1, true), "unknown async connection was accepted")
   print("Backend DDL RPC: table, view, and metadata cache verified")
+  print("Backend metadata RPC: async success, failure, and validation verified")
 end
 vim.fn.DbeeDeleteConnection(id)
 local channel = vim.fn["remote#host#Require"]("nvim_dbee")

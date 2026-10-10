@@ -33,15 +33,21 @@ local expansion = require("dbee.ui.drawer.expansion")
 ---@field private current_note_id? note_id current active note
 ---@field private window_options table<string, any> a table of window options.
 ---@field private buffer_options table<string, any> a table of buffer options.
+---@field private refreshing table<connection_id, boolean>
+---@field private spinner string[]
+---@field private spinner_index integer
+---@field private spinner_timer? integer
 local DrawerUI = {}
 
 ---@param handler Handler
 ---@param editor EditorUI
 ---@param result ResultUI
 ---@param opts? drawer_config
+---@param progress_opts? progress_config
 ---@return DrawerUI
-function DrawerUI:new(handler, editor, result, opts)
+function DrawerUI:new(handler, editor, result, opts, progress_opts)
   opts = opts or {}
+  progress_opts = progress_opts or require("dbee.config").default.result.progress
 
   if not handler then
     error("no Handler provided to Drawer")
@@ -70,6 +76,9 @@ function DrawerUI:new(handler, editor, result, opts)
     candies = candies,
     current_conn_id = current_conn.id,
     current_note_id = current_note.id,
+    refreshing = {},
+    spinner = progress_opts.spinner and #progress_opts.spinner > 0 and progress_opts.spinner or { "|", "/", "-", "\\" },
+    spinner_index = 1,
     window_options = vim.tbl_extend("force", {
       wrap = false,
       winfixheight = true,
@@ -96,9 +105,21 @@ function DrawerUI:new(handler, editor, result, opts)
   -- create tree
   o.tree = o:create_tree(o.bufnr)
 
+  vim.api.nvim_create_autocmd("BufWipeout", {
+    buffer = o.bufnr,
+    once = true,
+    callback = function()
+      o:stop_metadata_spinner()
+    end,
+  })
+
   -- listen to events
   handler:register_event_listener("current_connection_changed", function(data)
     o:on_current_connection_changed(data)
+  end)
+
+  handler:register_event_listener("metadata_refresh_state_changed", function(data)
+    o:on_metadata_refresh_state_changed(data)
   end)
 
   editor:register_event_listener("current_note_changed", function(data)
@@ -106,6 +127,47 @@ function DrawerUI:new(handler, editor, result, opts)
   end)
 
   return o
+end
+
+---@private
+function DrawerUI:stop_metadata_spinner()
+  if self.spinner_timer then
+    vim.fn.timer_stop(self.spinner_timer)
+    self.spinner_timer = nil
+  end
+end
+
+---@private
+---@param data { conn_id: connection_id, refreshing: boolean, error?: string }
+function DrawerUI:on_metadata_refresh_state_changed(data)
+  self.refreshing[data.conn_id] = data.refreshing or nil
+  if data.error then
+    vim.notify(data.error, vim.log.levels.ERROR, { title = "DBee" })
+  end
+  if not vim.api.nvim_buf_is_valid(self.bufnr) then
+    self:stop_metadata_spinner()
+    return
+  end
+
+  if data.refreshing then
+    if not self.spinner_timer then
+      self.spinner_index = 1
+      self.spinner_timer = vim.fn.timer_start(100, function()
+        self.spinner_index = (self.spinner_index % #self.spinner) + 1
+        self.tree:render()
+      end, { ["repeat"] = -1 })
+    end
+    self.tree:render()
+  else
+    if not next(self.refreshing) then
+      self:stop_metadata_spinner()
+    end
+    if data.error then
+      self.tree:render()
+    else
+      self:refresh()
+    end
+  end
 end
 
 -- event listener for current connection change
@@ -178,6 +240,10 @@ function DrawerUI:create_tree(bufnr)
         line:append(string.gsub(node.name, "\n", " "), candy.icon_highlight)
       else
         line:append(string.gsub(node.name, "\n", " "), candy.text_highlight)
+      end
+
+      if node.type == "connection" and self.refreshing[node.id] then
+        line:append(" " .. self.spinner[self.spinner_index], "DiagnosticInfo")
       end
 
       return line
@@ -308,8 +374,7 @@ function DrawerUI:get_actions()
       if not node then
         return
       end
-      self.handler:connection_refresh_metadata(node.id)
-      self:refresh()
+      self.handler:connection_refresh_metadata_async(node.id)
     end,
     action_1 = function()
       local node = self.tree:get_node() --[[@as DrawerUINode]]

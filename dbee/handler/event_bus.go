@@ -54,6 +54,18 @@ func (eb *eventBus) CurrentConnectionChanged(id core.ConnectionID) {
 	eb.callLua("current_connection_changed", data)
 }
 
+func (eb *eventBus) MetadataRefreshStateChanged(id core.ConnectionID, refreshing bool, err error) {
+	errMsg := "nil"
+	if err != nil {
+		errMsg = fmt.Sprintf("%q", err.Error())
+	}
+	eb.callLua("metadata_refresh_state_changed", fmt.Sprintf(`{
+		conn_id = %q,
+		refreshing = %t,
+		error = %s,
+	}`, id, refreshing, errMsg))
+}
+
 // DatabaseSelected is called when the selected database of a connection is changed.
 // Sends the new database name along with affected connection ID to the lua event handler.
 func (eb *eventBus) DatabaseSelected(id core.ConnectionID, dbname string) {

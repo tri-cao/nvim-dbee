@@ -64,7 +64,7 @@ local function setup_ui()
   m.result = ResultUI:new(m.handler, m.config.result)
   m.call_log = CallLogUI:new(m.handler, m.result, m.config.call_log)
   m.editor = EditorUI:new(m.handler, m.result, m.config.editor)
-  m.drawer = DrawerUI:new(m.handler, m.editor, m.result, m.config.drawer)
+  m.drawer = DrawerUI:new(m.handler, m.editor, m.result, m.config.drawer, m.config.result.progress)
 
   m.ui_loaded = true
 end

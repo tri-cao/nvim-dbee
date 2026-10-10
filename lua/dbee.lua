@@ -67,11 +67,12 @@ function dbee.search(pattern)
   return require("dbee.ui.search").open(state.handler(), state.editor(), state.result(), dbee.open, pattern)
 end
 
----Refresh cached tables and columns, then redraw the drawer.
+---Refresh cached tables and columns in the background, then redraw the drawer.
 ---@param id? connection_id defaults to the active connection
 function dbee.refresh_metadata(id)
-  api.core.connection_refresh_metadata(id)
-  api.ui.drawer_refresh()
+  -- Initialize the drawer's refresh listener before starting the background job.
+  require("dbee.api.state").drawer()
+  api.core.connection_refresh_metadata_async(id)
 end
 
 ---Execute a query on current connection.

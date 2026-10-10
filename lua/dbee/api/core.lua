@@ -143,6 +143,19 @@ function core.connection_refresh_metadata(id)
   return state.handler():connection_refresh_metadata(id)
 end
 
+---Refresh metadata in the background. Completion is reported through metadata_refresh_state_changed.
+---@param id? connection_id defaults to the active connection
+function core.connection_refresh_metadata_async(id)
+  if not id then
+    local conn = core.get_current_connection()
+    if not conn then
+      error("no connection currently selected")
+    end
+    id = conn.id
+  end
+  state.handler():connection_refresh_metadata_async(id)
+end
+
 ---Get columns of a table
 ---@param id connection_id
 ---@param opts { table: string, schema: string, materialization: string }
