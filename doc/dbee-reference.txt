@@ -139,7 +139,13 @@ editor_config                                                    *editor_config*
     Configuration for editor UI tile.
 
     Type: ~
-        {directory:string,mappings:key_mapping[],window_options:table<string,any>,buffer_options:table<string,any>}
+        {directory:string,mappings:key_mapping[],completion:completion_config,window_options:table<string,any>,buffer_options:table<string,any>}
+
+completion_config                                            *completion_config*
+    SQL editor completion options.
+
+    Type: ~
+        {enabled:boolean,auto:boolean,delay:integer}
 
 
 call_log_config                                                *call_log_config*

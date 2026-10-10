@@ -10,6 +10,7 @@ local connections = {
   unsafe = { id = "unsafe", name = "Team/DB\\Replica" },
 }
 local handler = {
+  register_event_listener = function() end,
   connection_get_params = function(_, id)
     return connections[id]
   end,

@@ -365,12 +365,16 @@ Here are the defaults:
         -- see drawer comment.
         window_options = {},
         buffer_options = {},
+
+        -- SQL suggestions; delay in milliseconds.
+        completion = { enabled = true, auto = true, delay = 100 },
     
         -- directory where to store the scratchpads.
         --directory = "path/to/scratchpad/dir",
     
         -- mappings for the buffer
         mappings = {
+          { key = "<C-Space>", mode = "i", action = "complete" },
           -- run what's currently selected on the active connection
           { key = "BB", mode = "v", action = "run_selection" },
           -- run the whole file on the active connection
@@ -657,6 +661,32 @@ Another option is to press `e` on a connection node and edit its source file man
 If you aren’t satisfied with the default capabilities, you can implement your
 own source. You just need to fill the `Source` interface and pass it to config
 at setup (`:h dbee.sources`).
+
+
+SQL COMPLETION
+
+SQL scratchpads show suggestions automatically while typing. FROM and JOIN
+suggest projects, databases, datasets, schemas, tables, views, and CTEs from
+the active connection. Other clauses suggest columns from the query's sources,
+including table aliases and subquery/CTE output columns. Ambiguous column names
+are qualified. Comments and string literals do not trigger suggestions.
+
+In insert mode, press <C-Space> or <C-x><C-o> to request suggestions manually.
+Use <C-n>/<C-p> to select, <C-y> to accept, and <C-e> to dismiss. Opening the
+popup preserves your text. No extra completion plugin is required.
+
+Configure completion in setup:
+>lua
+    editor = {
+      completion = { enabled = true, auto = true, delay = 100 },
+    }
+<
+delay is in milliseconds. Set auto = false for manual completion, or
+enabled = false to preserve your existing completion setup. Completion uses
+cached table/column metadata; R in the drawer refreshes these suggestions.
+Adapters that switch databases only expose cached tables in the selected
+database. Table-valued functions and unnamed expression outputs do not have
+column metadata available for completion.
 
 
 METADATA CACHE

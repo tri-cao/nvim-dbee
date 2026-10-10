@@ -17,6 +17,29 @@ env:
   GO_VERSION: "1.23.x"
 
 jobs:
+  editor-completion:
+    runs-on: ubuntu-22.04
+    name: Editor Completion (Neovim ${{ matrix.version }})
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        version: [v0.10.4, stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: ${{ matrix.version }}
+      - name: SQL completion regression tests
+        working-directory: .
+        run: nvim --headless -n -u NONE -i NONE -l tests/editor_completion.lua
+      - name: Completion popup smoke test
+        working-directory: .
+        run: nvim --headless -n -u NONE -i NONE -c 'luafile tests/editor_completion_ui.lua'
+      - name: Blink provider regression tests
+        working-directory: .
+        run: nvim --headless -n -u NONE -i NONE -l tests/blink_completion.lua
+
   go-unit-test:
     runs-on: ubuntu-22.04
     name: Go Unit Test

@@ -28,7 +28,10 @@ local config = {}
 ---@alias result_config { focus_result: boolean, pin_header: boolean, mappings: key_mapping[], page_size: integer, progress: progress_config, window_options: table<string, any>, buffer_options: table<string, any> }
 
 ---Configuration for editor UI tile.
----@alias editor_config { directory: string, mappings: key_mapping[], window_options: table<string, any>, buffer_options: table<string, any> }
+---@alias editor_config { directory: string, mappings: key_mapping[], completion: completion_config, window_options: table<string, any>, buffer_options: table<string, any> }
+
+---SQL editor completion options.
+---@alias completion_config { enabled: boolean, auto: boolean, delay: integer }
 
 ---Configuration for call log UI tile.
 ---@alias call_log_config { mappings: key_mapping[], disable_candies: boolean, candies: table<string, Candy>, window_options: table<string, any>, buffer_options: table<string, any> }
@@ -321,11 +324,16 @@ config.default = {
     window_options = {},
     buffer_options = {},
 
+    -- SQL source and column suggestions from cached connection metadata.
+    -- Use <C-Space> or <C-x><C-o> to request suggestions manually.
+    completion = { enabled = true, auto = true, delay = 100 },
+
     -- directory where to store the scratchpads.
     --directory = "path/to/scratchpad/dir",
 
     -- mappings for the buffer
     mappings = {
+      { key = "<C-Space>", mode = "i", action = "complete", opts = { desc = "Complete SQL" } },
       -- cycle only through open scratchpads
       { key = "[b", mode = "n", action = "prev_note", opts = { desc = "Previous scratchpad" } },
       { key = "]b", mode = "n", action = "next_note", opts = { desc = "Next scratchpad" } },
@@ -445,6 +453,16 @@ function config.validate(cfg)
     result_progress = { cfg.result.progress, "table" },
     result_mappings = { cfg.result.mappings, "table" },
     editor_mappings = { cfg.editor.mappings, "table" },
+    editor_completion = { cfg.editor.completion, "table" },
+    editor_completion_enabled = { cfg.editor.completion.enabled, "boolean" },
+    editor_completion_auto = { cfg.editor.completion.auto, "boolean" },
+    editor_completion_delay = {
+      cfg.editor.completion.delay,
+      function(delay)
+        return type(delay) == "number" and delay >= 0 and delay % 1 == 0
+      end,
+      "a non-negative integer",
+    },
     call_log_mappings = { cfg.call_log.mappings, "table" },
 
     window_layout = { cfg.window_layout, "table" },

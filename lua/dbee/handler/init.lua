@@ -5,6 +5,7 @@ local utils = require("dbee.utils")
 ---@class Handler
 ---@field private sources table<source_id, Source>
 ---@field private source_conn_lookup table<source_id, connection_id[]>
+---@field private metadata_versions table<connection_id, integer>
 local Handler = {}
 
 ---@param sources? Source[]
@@ -14,6 +15,7 @@ function Handler:new(sources)
   local o = {
     sources = {},
     source_conn_lookup = {},
+    metadata_versions = {},
   }
   setmetatable(o, self)
   self.__index = self
@@ -232,10 +234,16 @@ end
 ---@param scope? MetadataScope
 function Handler:connection_refresh_metadata(id, scope)
   local ret = vim.fn.DbeeConnectionRefreshMetadata(id, scope or vim.NIL)
+  self.metadata_versions[id] = (self.metadata_versions[id] or 0) + 1
   if not ret or ret == vim.NIL then
     return {}
   end
   return ret
+end
+
+-- Completion snapshots must also notice callers using the synchronous refresh API.
+function Handler:connection_metadata_version(id)
+  return self.metadata_versions[id] or 0
 end
 
 ---@param id connection_id

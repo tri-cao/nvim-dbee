@@ -1,6 +1,7 @@
 local utils = require("dbee.utils")
 local common = require("dbee.ui.common")
 local welcome = require("dbee.ui.editor.welcome")
+local completion = require("dbee.ui.editor.completion")
 local query_status_ns = vim.api.nvim_create_namespace("dbee_query_status")
 
 local function query_status_highlights()
@@ -30,6 +31,8 @@ vim.api.nvim_create_autocmd("ColorScheme", {
 ---@field private window_options table<string, any> a table of window options.
 ---@field private buffer_options table<string, any> a table of buffer options for all notes.
 ---@field private query_calls table<call_id, { bufnr: integer, mark: integer }> pending query locations.
+---@field private completion table SQL completion provider
+---@field private completion_options table
 local EditorUI = {}
 
 ---@param handler Handler
@@ -54,6 +57,7 @@ function EditorUI:new(handler, result, opts)
     notes = {},
     event_callbacks = {},
     query_calls = {},
+    completion_options = vim.tbl_extend("force", { enabled = true, auto = true, delay = 100 }, opts.completion or {}),
     directory = opts.directory or vim.fn.stdpath("state") .. "/dbee/notes",
     mappings = opts.mappings,
     window_options = vim.tbl_extend("force", { signcolumn = "auto" }, opts.window_options or {}),
@@ -66,6 +70,7 @@ function EditorUI:new(handler, result, opts)
   }
   setmetatable(o, self)
   self.__index = self
+  o.completion = require("dbee.completion").new(handler)
 
   query_status_highlights()
   handler:register_event_listener("call_state_changed", function(data)
@@ -184,6 +189,7 @@ function EditorUI:create_welcome_note()
   common.configure_buffer_options(bufnr, self.buffer_options)
   vim.api.nvim_buf_set_option(bufnr, "buflisted", false)
   common.configure_buffer_mappings(bufnr, self:get_actions(), self.mappings)
+  completion.attach(bufnr, self.completion, self.completion_options)
 
   return note_id
 end
@@ -192,6 +198,7 @@ end
 ---@return table<string, fun()>
 function EditorUI:get_actions()
   return {
+    complete = completion.trigger,
     prev_note = function()
       self:cycle_note(-vim.v.count1)
     end,
@@ -617,6 +624,7 @@ function EditorUI:display_note(id)
   -- configure options and mappings on new buffer
   common.configure_buffer_options(bufnr, self.buffer_options)
   common.configure_buffer_mappings(bufnr, self:get_actions(), self.mappings)
+  completion.attach(bufnr, self.completion, self.completion_options)
 end
 
 ---@param winid integer

@@ -267,6 +267,23 @@ Here are a few steps to quickly get started:
   (top-right by default) and start writing queries. In editor pane, you can use the following
   actions:
 
+  - SQL suggestions appear automatically as you type. FROM and JOIN suggest projects, databases,
+    datasets, schemas, tables, views, and CTEs from the active connection. Other clauses suggest
+    columns from the current query's sources, including aliases and subquery/CTE output columns.
+    Shared column names are qualified with their table alias to avoid ambiguous SQL.
+    BigQuery paths such as `my-project.dataset.table` work without typing backticks first;
+    accepting a table suggestion adds identifier quotes when needed.
+  - Press `<C-Space>` or `<C-x><C-o>` in insert mode to request suggestions. Use `<C-n>` / `<C-p>`
+    to select, `<C-y>` to accept, and `<C-e>` to dismiss. Opening the menu preserves your text.
+    Completion uses cached table/column metadata; refresh it with `R` in the drawer when needed.
+    Only the selected database's cached tables are available when an adapter switches databases.
+  - Configure `editor.completion = { enabled = true, auto = true, delay = 100 }` to adjust the popup
+    delay in milliseconds. Set `auto = false` for manual completion, or `enabled = false` to keep
+    your existing completion setup. Built-in completion needs no additional plugin.
+  - Blink can use the `dbee.completion.blink` provider in `sources.providers`. Enable it for SQL
+    filetypes to complete both scratchpads and ordinary SQL files using DBee's active connection.
+    Set `editor.completion.auto = false` when Blink manages the completion menu.
+
   - Press Enter in normal mode to run the SQL statement under the cursor.
   - Highlight some text in visual mode and press `BB` - this will run the selected query on the
     active connection.

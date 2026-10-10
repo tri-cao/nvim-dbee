@@ -8,6 +8,7 @@ package.loaded["dbee.api.ui"] = ui
 
 local directory = vim.fn.tempname()
 local handler = {
+  register_event_listener = function() end,
   connection_get_params = function(_, id)
     return { id = id, name = id }
   end,
@@ -40,15 +41,21 @@ for _, name in ipairs { "drawer", "result", "call_log" } do
   local buf = vim.api.nvim_create_buf(false, true)
   panes[name] = buf
   common.configure_buffer_mappings(buf, {}, defaults[name].mappings)
-  ui[name .. "_show"] = function(win) vim.api.nvim_win_set_buf(win, buf) end
+  ui[name .. "_show"] = function(win)
+    vim.api.nvim_win_set_buf(win, buf)
+  end
 end
 
 local external = vim.api.nvim_create_buf(true, false)
 vim.api.nvim_set_current_buf(external)
 local source_win = vim.api.nvim_get_current_win()
 local global_keys = 0
-vim.keymap.set("n", "[b", function() global_keys = global_keys + 1 end)
-vim.keymap.set("n", "]b", function() global_keys = global_keys + 1 end)
+vim.keymap.set("n", "[b", function()
+  global_keys = global_keys + 1
+end)
+vim.keymap.set("n", "]b", function()
+  global_keys = global_keys + 1
+end)
 local function press(keys)
   vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(keys, true, false, true), "xt", false)
 end
@@ -69,7 +76,9 @@ local unrelated = vim.api.nvim_create_buf(true, false)
 editor:open_connection_scratchpad("second")
 local second = editor:get_current_note()
 local changed
-editor:register_event_listener("current_note_changed", function(data) changed = data.note_id end)
+editor:register_event_listener("current_note_changed", function(data)
+  changed = data.note_id
+end)
 
 local function check_current(note, connection)
   assert(vim.api.nvim_get_current_win() == layout.windows.editor, "editor did not get focus")
