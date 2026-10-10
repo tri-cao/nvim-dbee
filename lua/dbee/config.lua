@@ -369,6 +369,8 @@ config.default = {
       { key = "<CR>", mode = "", action = "show_result" },
       -- copy the entire query of the currently selected call record
       { key = "yy", mode = "n", action = "yank_query" },
+      -- append the selected query to its connection's scratchpad and focus the editor
+      { key = ">", mode = "n", action = "edit_query" },
       -- cancel the currently selected call (if its still executing)
       { key = "<C-c>", mode = "", action = "cancel_call" },
     },

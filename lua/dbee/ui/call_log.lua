@@ -8,12 +8,14 @@ local action_descriptions = {
   show_help = "Show query history keybindings",
   show_result = "Show result of selected query",
   yank_query = "Copy entire selected query",
+  edit_query = "Append selected query to connection scratchpad and focus editor",
   cancel_call = "Cancel selected query if still executing",
 }
 
 -- CallLogUI is connection's call history.
 ---@class CallLogUI
 ---@field private result ResultUI
+---@field private editor EditorUI
 ---@field private handler Handler
 ---@field private tree NuiTree
 ---@field private winid? integer
@@ -27,14 +29,18 @@ local action_descriptions = {
 local CallLogUI = {}
 
 ---@param handler Handler
+---@param editor EditorUI
 ---@param result ResultUI
 ---@param opts call_log_config
 ---@return CallLogUI
-function CallLogUI:new(handler, result, opts)
+function CallLogUI:new(handler, editor, result, opts)
   opts = opts or {}
 
   if not handler then
     error("no Handler passed to CallLogUI")
+  end
+  if not editor then
+    error("no EditorTile passed to CallLogUI")
   end
   if not result then
     error("no ResultTile passed to CallLogUI")
@@ -48,6 +54,7 @@ function CallLogUI:new(handler, result, opts)
   ---@type CallLogUI
   local o = {
     handler = handler,
+    editor = editor,
     result = result,
     candies = candies,
     mappings = opts.mappings or {},
@@ -216,6 +223,22 @@ function CallLogUI:get_actions()
       end
 
       vim.fn.setreg(vim.v.register, node.call.query, "v")
+    end,
+    edit_query = function()
+      local node = self.tree:get_node()
+      if not node or not node.call then
+        return
+      end
+
+      local conn_id = node.call.connection_id
+      if not conn_id or conn_id == "" then
+        conn_id = self.current_connection_id
+      end
+      if not conn_id then
+        return
+      end
+
+      self.editor:append_connection_query(conn_id, node.call.query)
     end,
     cancel_call = function()
       local node = self.tree:get_node()

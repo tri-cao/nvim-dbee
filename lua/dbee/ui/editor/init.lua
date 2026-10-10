@@ -1,6 +1,17 @@
 local utils = require("dbee.utils")
 local common = require("dbee.ui.common")
 local welcome = require("dbee.ui.editor.welcome")
+local query_status_ns = vim.api.nvim_create_namespace("dbee_query_status")
+
+local function query_status_highlights()
+  vim.api.nvim_set_hl(0, "DbeeQuerySuccess", { fg = "#22c55e", default = true })
+  vim.api.nvim_set_hl(0, "DbeeQueryFailure", { fg = "#ef4444", default = true })
+end
+
+vim.api.nvim_create_autocmd("ColorScheme", {
+  group = vim.api.nvim_create_augroup("DbeeQueryStatus", { clear = true }),
+  callback = query_status_highlights,
+})
 
 ---@alias namespace_id "global"|string
 
@@ -18,6 +29,7 @@ local welcome = require("dbee.ui.editor.welcome")
 ---@field private event_callbacks table<editor_event_name, event_listener[]> callbacks for events
 ---@field private window_options table<string, any> a table of window options.
 ---@field private buffer_options table<string, any> a table of buffer options for all notes.
+---@field private query_calls table<call_id, { bufnr: integer, mark: integer }> pending query locations.
 local EditorUI = {}
 
 ---@param handler Handler
@@ -41,9 +53,10 @@ function EditorUI:new(handler, result, opts)
     result = result,
     notes = {},
     event_callbacks = {},
+    query_calls = {},
     directory = opts.directory or vim.fn.stdpath("state") .. "/dbee/notes",
     mappings = opts.mappings,
-    window_options = vim.tbl_extend("force", {}, opts.window_options or {}),
+    window_options = vim.tbl_extend("force", { signcolumn = "auto" }, opts.window_options or {}),
     buffer_options = vim.tbl_extend("force", {
       buflisted = true,
       bufhidden = "hide",
@@ -53,6 +66,11 @@ function EditorUI:new(handler, result, opts)
   }
   setmetatable(o, self)
   self.__index = self
+
+  query_status_highlights()
+  handler:register_event_listener("call_state_changed", function(data)
+    o:on_query_state_changed(data.call)
+  end)
 
   -- set the current note as first note from global namespace
   local global_notes = o:namespace_get_notes("global")
@@ -64,6 +82,70 @@ function EditorUI:new(handler, result, opts)
   end
 
   return o
+end
+
+---Execute a query and keep its location until completion, even in a hidden note.
+---@private
+---@param bufnr integer
+---@param row integer zero-based first line of the query
+---@param query string
+function EditorUI:execute_query(bufnr, row, query)
+  local conn = self.handler:get_current_connection()
+  if not conn then
+    return
+  end
+
+  -- Each scratchpad only shows the latest run, regardless of its starting line.
+  vim.api.nvim_buf_clear_namespace(bufnr, query_status_ns, 0, -1)
+  for id, location in pairs(self.query_calls) do
+    if location.bufnr == bufnr then
+      self.query_calls[id] = nil
+    end
+  end
+
+  local call = self.handler:connection_execute(conn.id, query)
+  local mark = vim.api.nvim_buf_set_extmark(bufnr, query_status_ns, row, 0, {})
+  self.query_calls[call.id] = { bufnr = bufnr, mark = mark }
+  -- Fast queries can already be finished when connection_execute returns.
+  self:on_query_state_changed(call)
+  self.result:set_call(call)
+end
+
+---@private
+---@param call CallDetails
+function EditorUI:on_query_state_changed(call)
+  local location = self.query_calls[call.id]
+  if not location then
+    return
+  end
+  if not vim.api.nvim_buf_is_loaded(location.bufnr) then
+    self.query_calls[call.id] = nil
+    return
+  end
+
+  local success = call.state == "archived"
+  local failure = call.state == "executing_failed"
+    or call.state == "retrieving_failed"
+    or call.state == "archive_failed"
+  if not success and not failure and call.state ~= "canceled" and call.state ~= "overwritten" then
+    return
+  end
+
+  self.query_calls[call.id] = nil
+  local pos = vim.api.nvim_buf_get_extmark_by_id(location.bufnr, query_status_ns, location.mark, {})
+  if #pos == 0 then
+    return
+  end
+  if success or failure then
+    vim.api.nvim_buf_set_extmark(location.bufnr, query_status_ns, pos[1], 0, {
+      id = location.mark,
+      sign_text = success and "✓" or "✗",
+      sign_hl_group = success and "DbeeQuerySuccess" or "DbeeQueryFailure",
+      priority = 20,
+    })
+  else
+    vim.api.nvim_buf_del_extmark(location.bufnr, query_status_ns, location.mark)
+  end
 end
 
 ---@private
@@ -119,31 +201,22 @@ function EditorUI:get_actions()
       local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
       local query = table.concat(lines, "\n")
 
-      local conn = self.handler:get_current_connection()
-      if not conn then
-        return
-      end
-      local call = self.handler:connection_execute(conn.id, query)
-      self.result:set_call(call)
+      self:execute_query(bufnr, 0, query)
     end,
     run_selection = function()
       local srow, scol, erow, ecol = utils.visual_selection()
 
-      local selection = vim.api.nvim_buf_get_text(0, srow, scol, erow, ecol, {})
+      local bufnr = vim.api.nvim_get_current_buf()
+      local selection = vim.api.nvim_buf_get_text(bufnr, srow, scol, erow, ecol, {})
       local query = table.concat(selection, "\n")
 
-      local conn = self.handler:get_current_connection()
-      if not conn then
-        return
-      end
-      local call = self.handler:connection_execute(conn.id, query)
-      self.result:set_call(call)
+      self:execute_query(bufnr, srow, query)
     end,
     run_under_cursor = function()
       local bufnr = vim.api.nvim_get_current_buf()
       local query, srow, erow = utils.query_under_cursor(bufnr)
 
-      if query ~= "" then
+      if query and query ~= "" then
         -- highlight the statement that will be executed
         local ns_id = vim.api.nvim_create_namespace("dbee_query_highlight")
         vim.api.nvim_buf_clear_namespace(bufnr, ns_id, 0, -1)
@@ -155,10 +228,7 @@ function EditorUI:get_actions()
         })
 
         -- run the query
-        local conn = self.handler:get_current_connection()
-        if conn then
-          self.result:set_call(self.handler:connection_execute(conn.id, query))
-        end
+        self:execute_query(bufnr, srow, query)
 
         -- remove highlighting after delay
         vim.defer_fn(function()
@@ -461,6 +531,32 @@ function EditorUI:open_connection_scratchpad(conn_id)
   end
   note_id = note_id or self:namespace_create_note(conn_id, name)
   self:set_current_note(note_id)
+end
+
+---Appends a query to a connection's scratchpad and focuses it for editing.
+---@param conn_id connection_id
+---@param query string
+function EditorUI:append_connection_query(conn_id, query)
+  if not self.winid or not vim.api.nvim_win_is_valid(self.winid) then
+    return
+  end
+
+  self:open_connection_scratchpad(conn_id)
+  local note = self:get_current_note()
+  local lines = vim.api.nvim_buf_get_lines(note.bufnr, 0, -1, false)
+  local start = #lines
+  local row = start + 1
+  local query_lines = vim.split(query, "\n", { plain = true })
+  if #lines == 1 and lines[1] == "" then
+    start = 0
+    row = 1
+  elseif lines[#lines] ~= "" then
+    table.insert(query_lines, 1, "")
+    row = row + 1
+  end
+
+  vim.api.nvim_buf_set_lines(note.bufnr, start, -1, false, query_lines)
+  vim.api.nvim_win_set_cursor(self.winid, { row, 0 })
 end
 
 -- Sets note with id as the current note

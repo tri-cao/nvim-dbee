@@ -268,9 +268,16 @@ Here are a few steps to quickly get started:
   (top-right by default) and start writing queries. In editor pane, you can use the following
   actions:
 
+  - Press Enter in normal mode to run the SQL statement under the cursor.
   - Highlight some text in visual mode and press `BB` - this will run the selected query on the
     active connection.
   - If you press `BB` in normal mode, you run the whole scratchpad on the active connection.
+  - When a query finishes, its first line shows a green `✓` for success or a red `✗` for failure
+    in the sign column before the line number. Each scratchpad shows only its latest query's status;
+    starting another query clears the previous sign immediately.
+
+- In the call log, press `>` to append the selected query to its connection's scratchpad and
+  focus the editor. Existing SQL is preserved, and the cursor moves to the inserted query.
 
 - Results are first saved to a temporary disk cache while the result buffer shows a loading
   indicator. Once retrieval finishes, the "result" buffer (bottom right by default) reads only

@@ -38,7 +38,7 @@ local result = {
   page_current = function() end,
 }
 local history_win = vim.api.nvim_get_current_win()
-local history = require("dbee.ui.call_log"):new(handler, result, config)
+local history = require("dbee.ui.call_log"):new(handler, {}, result, config)
 history:show(history_win)
 
 local function press(key)

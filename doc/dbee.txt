@@ -394,6 +394,8 @@ Here are the defaults:
           { key = "<CR>", mode = "", action = "show_result" },
           -- copy the entire query of the currently selected call record
           { key = "yy", mode = "n", action = "yank_query" },
+          -- append the selected query to its connection's scratchpad and focus the editor
+          { key = ">", mode = "n", action = "edit_query" },
           -- cancel the currently selected call (if its still executing)
           { key = "<C-c>", mode = "", action = "cancel_call" },
         },
@@ -519,9 +521,13 @@ Here are a few steps to quickly get started:
 - Once you selected the connection and created a scratchpad, you can navigate to
     the editor pane (top-right by default) and start writing queries. In editor
     pane, you can use the following actions:
+    - Press Enter in normal mode to run the SQL statement under the cursor.
     - Highlight some text in visual mode and press `BB` - this will run the selected query on the
         active connection.
     - If you press `BB` in normal mode, you run the whole scratchpad on the active connection.
+    - When a query finishes, its first line shows a green `✓` for success or a red `✗` for failure
+        in the sign column before the line number. Each scratchpad shows only its latest query's status;
+        starting another query clears the previous sign immediately.
 - Results are first saved to a temporary disk cache while the result buffer shows
     a loading indicator. Once retrieval finishes, the "result" buffer (bottom
     right by default) reads only the chunks needed for the current page. Values
