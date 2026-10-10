@@ -24,7 +24,7 @@ local handler = {
     return { id = "conn" }
   end,
   register_event_listener = function() end,
-  connection_get_calls = function()
+  get_calls = function()
     return calls
   end,
   call_cancel = function(_, id)

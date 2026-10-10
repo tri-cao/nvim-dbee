@@ -255,6 +255,8 @@ Here are a few steps to quickly get started:
 
   - Scratchpads:
 
+    - The `sql` section contains all scratchpads, including every connection's scratchpad. It is
+      shared across projects and stays the same when you switch connections.
     - Press `<CR>` on the `new` node to create a new scratchpad.
     - When you try to save it to disk (`:w`), the path is automatically filled for you. You can
       change the name to anything you want, if you save it to the suggested directory, it will load
@@ -322,9 +324,9 @@ Here are a few steps to quickly get started:
   the chunks needed for the current page. Values longer than 50 characters show their first
   50 characters followed by `...`; copying and exporting still use the full values.
   Tabs and line breaks appear as `\t` and `\n` in the preview to keep columns aligned.
-  Each connection keeps results for its 10 most recent queries in `/tmp/dbee-results/`,
-  available from the call log even after restarting. Starting an 11th query replaces the oldest
-  result; failed and canceled queries also count toward this limit. The metadata cache stays separate
+  The global call log keeps the 20 most recent queries and their results across all connections in `/tmp/dbee-results/`,
+  available from the call log even after restarting. Starting a 21st query replaces the oldest
+  query and result; failed and canceled queries also count toward this limit. The metadata cache stays separate
   in `metadata.sqlite3` and is unaffected by query execution.
   If the total number of results was lower than the `page_size` parameter in config (100
   by default), all results should already be present. If there are more than `page_size` results,
@@ -474,6 +476,12 @@ local ddl = require("dbee").api.core.connection_get_ddl("connection-id", {
 ```
 
 This raises an error if the database does not supply DDL for the object.
+
+Successful queries that change metadata refresh it automatically in the background. Creating a
+table or view refreshes its database/dataset/schema; altering an existing table or view refreshes
+that object. Creating or changing a database/dataset/schema refreshes the connection, including
+the database selector. Renaming an object refreshes its parent, and ambiguous DDL targets fall
+back to a connection refresh. Data-only queries do not trigger metadata refreshes.
 
 Press `R` in the drawer to refresh the selected connection, database/dataset/schema, or table/view in
 the background. A column refreshes its parent table. Only metadata within that scope is replaced;

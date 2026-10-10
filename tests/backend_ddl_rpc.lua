@@ -26,6 +26,14 @@ if vim.env.DBEE_EXPECT_OLD == "1" then
   assert(tostring(err):find('require("dbee").install("go")', 1, true), "missing rebuild instructions")
   print("Older backend RPC: rebuild diagnostic verified")
 else
+  local events = {}
+  handler:register_event_listener("metadata_refresh_state_changed", function(data)
+    events[#events + 1] = data
+  end)
+  handler:connection_load_metadata_async(id)
+  assert(vim.wait(5000, function() return #events == 2 end, 10), "initial async metadata load did not finish")
+  assert(events[1].conn_id == id and events[1].refreshing, "initial load did not emit its start event")
+  assert(not events[2].refreshing and not events[2].error, events[2].error or "initial metadata load failed")
   local structure = handler:connection_get_structure(id)
   assert(#structure > 0, "metadata RPC returned no structure")
   local ddl = handler:connection_get_ddl(id, table_opts)
@@ -39,10 +47,7 @@ else
   assert(view:find("CREATE VIEW active_users", 1, true), "view DDL RPC failed")
   assert(#handler:connection_get_calls(id) == 0, "DDL preview created query history")
 
-  local events = {}
-  handler:register_event_listener("metadata_refresh_state_changed", function(data)
-    events[#events + 1] = data
-  end)
+  events = {}
   handler:connection_refresh_metadata_async(id)
   assert(
     vim.wait(5000, function()
@@ -60,6 +65,12 @@ else
       .. "CREATE VIEW active_users AS SELECT id, email FROM users; CREATE TABLE added (id INTEGER);",
   }, { text = true }):wait()
   assert(changed.code == 0, changed.stderr)
+  -- Initial loading reuses the snapshot instead of forcing a database refresh.
+  events = {}
+  handler:connection_load_metadata_async(id)
+  assert(vim.wait(5000, function() return #events == 2 end, 10), "cached async load did not finish")
+  assert(not events[2].error, events[2].error)
+  assert(handler:connection_get_ddl(id, table_opts) == ddl, "initial load bypassed cached metadata")
   local scope = {
     node_id = "users-node",
     path = {
@@ -114,7 +125,9 @@ else
   assert(events[1].conn_id == failed_id and events[1].refreshing, "failed refresh did not emit its start event")
   assert(events[2].conn_id == failed_id and not events[2].refreshing and events[2].error, "refresh error was lost")
   vim.fn.DbeeDeleteConnection(failed_id)
-  local ok, err = pcall(handler.connection_refresh_metadata_async, handler, "missing")
+  local ok, err = pcall(handler.connection_load_metadata_async, handler, "missing")
+  assert(not ok and tostring(err):find("unknown connection", 1, true), "unknown async load connection was accepted")
+  ok, err = pcall(handler.connection_refresh_metadata_async, handler, "missing")
   assert(not ok and tostring(err):find("unknown connection", 1, true), "unknown async connection was accepted")
   print("Backend DDL RPC: table, view, and metadata cache verified")
   print("Backend metadata RPC: async success, failure, and validation verified")

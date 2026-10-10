@@ -43,15 +43,14 @@ func (d *queryCacheDriver) Close()                                   {}
 
 func newQueryCacheConnection(t *testing.T, driver Driver) *Connection {
 	t.Helper()
+	previousPath := resultCacheBasePath
+	resultCacheBasePath = t.TempDir()
+	path := globalResultPath()
 	id := ConnectionID("test-" + uuid.NewString())
 	connection := &Connection{params: &ConnectionParams{ID: id}, driver: driver}
 	t.Cleanup(func() {
-		cache := cacheForConnection(id)
-		for _, slot := range cache.slots {
-			_ = os.Remove(slot.path)
-		}
-		_ = os.Remove(cache.path)
-		connectionResultCaches.Delete(connectionResultPath(id))
+		connectionResultCaches.Delete(path)
+		resultCacheBasePath = previousPath
 	})
 	return connection
 }
@@ -83,19 +82,19 @@ func waitQueryCacheCall(t *testing.T, call *Call, finished <-chan CallState) Cal
 	return CallStateUnknown
 }
 
-func TestConnectionResultCacheKeepsLatestTen(t *testing.T) {
+func TestGlobalResultCacheKeepsLatestTwenty(t *testing.T) {
 	large := make([]Row, 1234)
 	for i := range large {
 		large[i] = Row{i, "old value"}
 	}
 	driver := &queryCacheDriver{rows: make(map[string][]Row)}
 	connection := newQueryCacheConnection(t, driver)
-	path := connectionResultPath(connection.GetID())
+	path := globalResultPath()
 	var calls []*Call
 	var results []*Result
 	var saved [][]byte
 	var firstSize int64
-	for i := 0; i <= 2*connectionResultLimit; i++ {
+	for i := 0; i <= 2*CallHistoryLimit; i++ {
 		query := fmt.Sprint(i)
 		driver.rows[query] = []Row{{i, "value"}}
 		if i == 0 {
@@ -108,7 +107,7 @@ func TestConnectionResultCacheKeepsLatestTen(t *testing.T) {
 		data, err := json.Marshal(call)
 		require.NoError(t, err)
 		calls, results, saved = append(calls, call), append(results, result), append(saved, data)
-		if i%connectionResultLimit == 0 {
+		if i%CallHistoryLimit == 0 {
 			require.Equal(t, path, result.cache.path)
 			info, err := os.Stat(path)
 			require.NoError(t, err)
@@ -120,7 +119,7 @@ func TestConnectionResultCacheKeepsLatestTen(t *testing.T) {
 		}
 		for j, previous := range calls {
 			rows, err := results[j].Rows(0, -1)
-			if j <= i-connectionResultLimit {
+			if j <= i-CallHistoryLimit {
 				require.Equal(t, CallStateOverwritten, previous.GetState())
 				require.ErrorIs(t, err, ErrResultOverwritten)
 				_, err = previous.GetResult()
@@ -140,7 +139,7 @@ func TestConnectionResultCacheKeepsLatestTen(t *testing.T) {
 		restored := new(Call)
 		require.NoError(t, json.Unmarshal(data, restored))
 		result, err := restored.GetResult()
-		if i < len(saved)-connectionResultLimit {
+		if i < len(saved)-CallHistoryLimit {
 			require.Equal(t, CallStateOverwritten, restored.GetState())
 			require.ErrorIs(t, err, ErrResultOverwritten)
 		} else {
@@ -161,7 +160,7 @@ func TestConnectionResultCacheKeepsLatestTen(t *testing.T) {
 	require.ErrorIs(t, err, ErrResultOverwritten)
 }
 
-func TestConnectionResultCachesAreIndependent(t *testing.T) {
+func TestGlobalResultCacheEvictsAcrossConnections(t *testing.T) {
 	driver := &queryCacheDriver{rows: map[string][]Row{"first": {{"first"}}, "second": {{"second"}}}}
 	a := newQueryCacheConnection(t, driver)
 	b := newQueryCacheConnection(t, driver)
@@ -169,17 +168,22 @@ func TestConnectionResultCachesAreIndependent(t *testing.T) {
 	require.Equal(t, CallStateArchived, waitQueryCacheCall(t, first, done))
 	other, done := startQueryCacheCall(b, "first")
 	require.Equal(t, CallStateArchived, waitQueryCacheCall(t, other, done))
-	for range connectionResultLimit {
+	for range CallHistoryLimit - 1 {
 		latest, done := startQueryCacheCall(a, "second")
 		require.Equal(t, CallStateArchived, waitQueryCacheCall(t, latest, done))
 	}
 	require.Equal(t, CallStateOverwritten, first.GetState())
+	require.Equal(t, CallStateArchived, other.GetState())
 	result, err := other.GetResult()
 	require.NoError(t, err)
 	rows, err := result.Rows(0, -1)
 	require.NoError(t, err)
 	require.Equal(t, driver.rows["first"], rows)
-	require.NotEqual(t, connectionResultPath(a.GetID()), connectionResultPath(b.GetID()))
+	latest, done := startQueryCacheCall(a, "second")
+	require.Equal(t, CallStateArchived, waitQueryCacheCall(t, latest, done))
+	require.Equal(t, CallStateOverwritten, other.GetState())
+	_, err = other.GetResult()
+	require.ErrorIs(t, err, ErrResultOverwritten)
 }
 
 func TestConnectionResultCacheConcurrentQueries(t *testing.T) {
@@ -223,10 +227,10 @@ func TestConnectionFailedQueryKeepsPreviousResults(t *testing.T) {
 	require.Equal(t, int64(resultPreambleSize), info.Size())
 	data, err := json.Marshal(old)
 	require.NoError(t, err)
-	connectionResultCaches.Delete(connectionResultPath(connection.GetID()))
+	connectionResultCaches.Delete(globalResultPath())
 	var restored Call
 	require.NoError(t, json.Unmarshal(data, &restored))
-	for range connectionResultLimit - 2 {
+	for range CallHistoryLimit - 2 {
 		call, done := startQueryCacheCall(connection, "fail")
 		require.Equal(t, CallStateExecutingFailed, waitQueryCacheCall(t, call, done))
 	}
@@ -307,7 +311,7 @@ func TestConnectionResultCacheEvictsPendingQueries(t *testing.T) {
 				t.Fatal("slow query did not reach the pause")
 			}
 			var newer *Call
-			for range connectionResultLimit {
+			for range CallHistoryLimit {
 				call, done := startQueryCacheCall(connection, "fast")
 				require.Equal(t, CallStateArchived, waitQueryCacheCall(t, call, done))
 				newer = call
@@ -323,15 +327,20 @@ func TestConnectionResultCacheEvictsPendingQueries(t *testing.T) {
 	}
 }
 
-func TestConnectionResultCachePreservesLegacyResult(t *testing.T) {
+func TestGlobalResultCachePreservesLegacyResult(t *testing.T) {
 	connection := newQueryCacheConnection(t, &queryCacheDriver{})
 	legacy := new(Result)
 	t.Cleanup(legacy.Wipe)
 	rows := []Row{{"legacy result"}}
 	require.NoError(t, legacy.SetIter(&cacheTestStream{rows: rows}, nil))
-	require.NoError(t, os.Rename(legacy.cache.path, connectionResultPath(connection.GetID())))
+	path := connectionResultPath(connection.GetID())
+	require.NoError(t, os.Rename(legacy.cache.path, path))
+	t.Cleanup(func() {
+		_ = os.Remove(path)
+		connectionResultCaches.Delete(path)
+	})
 	archive := newArchive(connection.GetID(), legacy.owner)
-	for range connectionResultLimit - 1 {
+	for range CallHistoryLimit {
 		call, done := startQueryCacheCall(connection, "next")
 		require.Equal(t, CallStateArchived, waitQueryCacheCall(t, call, done))
 	}
@@ -340,8 +349,4 @@ func TestConnectionResultCachePreservesLegacyResult(t *testing.T) {
 	got, err := result.Rows(0, -1)
 	require.NoError(t, err)
 	require.Equal(t, rows, got)
-	call, done := startQueryCacheCall(connection, "next")
-	require.Equal(t, CallStateArchived, waitQueryCacheCall(t, call, done))
-	_, err = archive.getResult()
-	require.ErrorIs(t, err, ErrResultOverwritten)
 }

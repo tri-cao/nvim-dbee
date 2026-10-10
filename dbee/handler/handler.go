@@ -28,15 +28,21 @@ type Handler struct {
 	log    *plugin.Logger
 	events *eventBus
 
-	lookupConnection     map[core.ConnectionID]*core.Connection
-	lookupCall           map[core.CallID]*core.Call
-	lookupConnectionCall map[core.ConnectionID][]core.CallID
+	lookupConnection map[core.ConnectionID]*core.Connection
+	lookupCall       map[core.CallID]*core.Call
+	callMu           sync.RWMutex
 
 	currentConnectionID core.ConnectionID
 	metadataCache       *metadata.Cache
 	metadataMu          sync.Mutex
 	metadataRefreshes   sync.Map
 	metadataJobs        sync.WaitGroup
+	metadataDatabases   sync.Map
+}
+
+type metadataDatabases struct {
+	current   string
+	available []string
 }
 
 func New(vim *nvim.Nvim, logger *plugin.Logger) *Handler {
@@ -48,18 +54,13 @@ func New(vim *nvim.Nvim, logger *plugin.Logger) *Handler {
 			log: logger,
 		},
 
-		lookupConnection:     make(map[core.ConnectionID]*core.Connection),
-		lookupCall:           make(map[core.CallID]*core.Call),
-		lookupConnectionCall: make(map[core.ConnectionID][]core.CallID),
+		lookupConnection: make(map[core.ConnectionID]*core.Connection),
+		lookupCall:       make(map[core.CallID]*core.Call),
 	}
 
-	// restore the call log concurrently
-	go func() {
-		err := h.restoreCallLog()
-		if err != nil {
-			h.log.Infof("h.restoreCallLog: %s", err)
-		}
-	}()
+	if err := h.restoreCallLog(); err != nil {
+		h.log.Infof("h.restoreCallLog: %s", err)
+	}
 
 	return h
 }
@@ -68,7 +69,7 @@ func (h *Handler) Close() {
 	h.metadataJobs.Wait()
 
 	// wait for unfinished calls
-	for _, c := range h.lookupCall {
+	for _, c := range h.allCalls() {
 		select {
 		case <-c.Done():
 		case <-time.After(10 * time.Second):
@@ -175,19 +176,35 @@ func (h *Handler) ConnectionExecute(connID core.ConnectionID, query string) (*co
 		return nil, fmt.Errorf("unknown connection with id: %q", connID)
 	}
 
-	call := c.Execute(query, func(state core.CallState, c *core.Call) {
-		if err := c.Err(); err != nil {
+	changes := core.QueryMetadataChanges(query)
+	var metadataDone sync.Once
+	if len(changes) > 0 {
+		// Reserve before execution so shutdown also waits for the completion
+		// callback, which can run after Call.Done has closed.
+		h.metadataJobs.Add(1)
+	}
+	call := c.Execute(query, func(state core.CallState, call *core.Call) {
+		if err := call.Err(); err != nil {
 			h.log.Errorf("cl.Err: %s", err)
 		}
 
-		h.events.CallStateChanged(c)
+		h.events.CallStateChanged(call)
+		if len(changes) > 0 {
+			switch state {
+			case core.CallStateArchived, core.CallStateExecutingFailed, core.CallStateRetrievingFailed,
+				core.CallStateArchiveFailed, core.CallStateCanceled, core.CallStateOverwritten:
+				metadataDone.Do(func() {
+					defer h.metadataJobs.Done()
+					if state == core.CallStateArchived && call.Err() == nil {
+						h.refreshQueryMetadata(c, changes)
+					}
+				})
+			}
+		}
 	})
 
-	id := call.GetID()
-
 	// add to lookup
-	h.lookupCall[id] = call
-	h.lookupConnectionCall[connID] = append(h.lookupConnectionCall[connID], id)
+	h.rememberCall(call)
 
 	// update current call and conn
 	_ = h.SetCurrentConnection(connID)
@@ -202,16 +219,10 @@ func (h *Handler) ConnectionGetCalls(connID core.ConnectionID) ([]*core.Call, er
 	}
 
 	var calls []*core.Call
-	callIDs, ok := h.lookupConnectionCall[connID]
-	if !ok {
-		return calls, nil
-	}
-	for _, cID := range callIDs {
-		c, ok := h.lookupCall[cID]
-		if !ok {
-			continue
+	for _, c := range h.GetCalls() {
+		if c.GetConnectionID() == connID {
+			calls = append(calls, c)
 		}
-		calls = append(calls, c)
 	}
 
 	return calls, nil
@@ -323,15 +334,25 @@ func (h *Handler) ConnectionRefreshMetadata(connID core.ConnectionID, scopes ...
 	return snapshot.Structure, nil
 }
 
+// ConnectionLoadMetadataAsync loads the persistent snapshot, fetching only on a
+// cache miss, and warms the database selector without blocking the UI.
+func (h *Handler) ConnectionLoadMetadataAsync(connID core.ConnectionID) error {
+	return h.connectionMetadataAsync(connID, false, nil)
+}
+
 // ConnectionRefreshMetadataAsync refreshes the snapshot without blocking the UI.
 func (h *Handler) ConnectionRefreshMetadataAsync(connID core.ConnectionID, scopes ...*core.MetadataScope) error {
-	c, ok := h.lookupConnection[connID]
-	if !ok {
-		return fmt.Errorf("unknown connection with id: %q", connID)
-	}
 	var scope *core.MetadataScope
 	if len(scopes) > 0 {
 		scope = scopes[0]
+	}
+	return h.connectionMetadataAsync(connID, true, scope)
+}
+
+func (h *Handler) connectionMetadataAsync(connID core.ConnectionID, refresh bool, scope *core.MetadataScope) error {
+	c, ok := h.lookupConnection[connID]
+	if !ok {
+		return fmt.Errorf("unknown connection with id: %q", connID)
 	}
 	// Requests for the same subtree share one job; distinct subtrees may queue.
 	key := string(connID)
@@ -349,9 +370,24 @@ func (h *Handler) ConnectionRefreshMetadataAsync(connID core.ConnectionID, scope
 	h.metadataJobs.Add(1)
 	go func() {
 		defer h.metadataJobs.Done()
-		_, err := h.connectionMetadata(c, true, scope)
+		_, err := h.connectionMetadata(c, refresh, scope)
+		if err == nil {
+			var current string
+			var available []string
+			current, available, err = c.ListDatabases()
+			if errors.Is(err, core.ErrDatabaseSwitchingNotSupported) {
+				err = nil
+			}
+			if err == nil {
+				h.metadataDatabases.Store(c.MetadataCacheKey(), metadataDatabases{current, available})
+			}
+		}
 		if err != nil {
-			err = fmt.Errorf("refresh metadata: %w", err)
+			if refresh {
+				err = fmt.Errorf("refresh metadata: %w", err)
+			} else {
+				err = fmt.Errorf("load metadata: %w", err)
+			}
 		}
 		h.events.MetadataRefreshStateChanged(connID, scope, false, err)
 		h.metadataRefreshes.Delete(key)
@@ -363,6 +399,10 @@ func (h *Handler) ConnectionListDatabases(connID core.ConnectionID) (current str
 	c, ok := h.lookupConnection[connID]
 	if !ok {
 		return "", nil, fmt.Errorf("unknown connection with id: %q", connID)
+	}
+	if cached, ok := h.metadataDatabases.Load(c.MetadataCacheKey()); ok {
+		databases := cached.(metadataDatabases)
+		return databases.current, databases.available, nil
 	}
 
 	currentDB, availableDBs, err := c.ListDatabases()
@@ -382,17 +422,20 @@ func (h *Handler) ConnectionSelectDatabase(connID core.ConnectionID, database st
 		return fmt.Errorf("unknown connection with id: %q", connID)
 	}
 
+	previousKey := c.MetadataCacheKey()
 	err := c.SelectDatabase(database)
 	if err != nil {
 		return fmt.Errorf("c.SelectDatabase: %w", err)
 	}
+	h.metadataDatabases.Delete(previousKey)
+	h.metadataDatabases.Delete(c.MetadataCacheKey())
 	h.events.DatabaseSelected(connID, database)
 
 	return nil
 }
 
 func (h *Handler) CallCancel(callID core.CallID) error {
-	call, ok := h.lookupCall[callID]
+	call, ok := h.findCall(callID)
 	if !ok {
 		return fmt.Errorf("unknown call with id: %q", callID)
 	}
@@ -402,7 +445,7 @@ func (h *Handler) CallCancel(callID core.CallID) error {
 }
 
 func (h *Handler) CallDisplayResult(callID core.CallID, buffer nvim.Buffer, from, to int) (int, error) {
-	call, ok := h.lookupCall[callID]
+	call, ok := h.findCall(callID)
 	if !ok {
 		return 0, fmt.Errorf("unknown call with id: %q", callID)
 	}
@@ -426,7 +469,7 @@ func (h *Handler) CallDisplayResult(callID core.CallID, buffer nvim.Buffer, from
 }
 
 func (h *Handler) CallStoreResult(callID core.CallID, fmat, out string, from, to int, arg ...any) error {
-	stat, ok := h.lookupCall[callID]
+	stat, ok := h.findCall(callID)
 	if !ok {
 		return fmt.Errorf("unknown call with id: %q", callID)
 	}

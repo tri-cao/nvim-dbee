@@ -247,6 +247,21 @@ function Handler:connection_metadata_version(id)
 end
 
 ---@param id connection_id
+function Handler:connection_load_metadata_async(id)
+  local ok, err = pcall(vim.fn.DbeeConnectionLoadMetadataAsync, id)
+  if not ok then
+    if tostring(err):find("unknown request method: 0:function:DbeeConnectionLoadMetadataAsync", 1, true) then
+      error(
+        'DBee backend is outdated: missing DbeeConnectionLoadMetadataAsync. Run :lua require("dbee").install("go"), '
+          .. "wait for installation to finish, then restart Neovim.",
+        0
+      )
+    end
+    error(err, 0)
+  end
+end
+
+---@param id connection_id
 ---@param scope? MetadataScope
 function Handler:connection_refresh_metadata_async(id, scope)
   local ok, err = pcall(vim.fn.DbeeConnectionRefreshMetadataAsync, id, scope or vim.NIL)
@@ -311,13 +326,35 @@ function Handler:connection_list_databases(id)
     return "", {}
   end
 
-  return unpack(ret)
+  -- Adapters without database switching can return ["", null] from the
+  -- warmed backend cache. RPC nulls are truthy userdata in Lua.
+  local current, available = unpack(ret)
+  return current ~= vim.NIL and current or "", available ~= vim.NIL and available or {}
 end
 
 ---@param id connection_id
 ---@param database string
 function Handler:connection_select_database(id, database)
   vim.fn.DbeeConnectionSelectDatabase(id, database)
+end
+
+---@return CallDetails[]
+function Handler:get_calls()
+  local ok, ret = pcall(vim.fn.DbeeGetCalls)
+  if not ok then
+    if tostring(ret):find("unknown request method: 0:function:DbeeGetCalls", 1, true) then
+      error(
+        'DBee backend is outdated: missing DbeeGetCalls. Run :lua require("dbee").install("go"), '
+          .. "wait for installation to finish, then restart Neovim.",
+        0
+      )
+    end
+    error(ret, 0)
+  end
+  if not ret or ret == vim.NIL then
+    return {}
+  end
+  return ret
 end
 
 ---@param id connection_id

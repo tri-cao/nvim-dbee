@@ -114,9 +114,9 @@ end
 M.connection_nodes = connection_nodes
 
 ---@param handler Handler
----@param result ResultUI
+---@param load_connection fun(conn: ConnectionParams): DrawerUINode[]
 ---@return DrawerUINode[]
-local function handler_real_nodes(handler, result)
+local function handler_real_nodes(handler, load_connection)
   ---@type DrawerUINode[]
   local nodes = {}
 
@@ -209,7 +209,6 @@ local function handler_real_nodes(handler, result)
         -- set connection as active manually
         action_1 = function(cb)
           handler:set_current_connection(conn.id)
-          handler:connection_get_structure(conn.id)
           cb()
         end,
         -- edit connection
@@ -218,7 +217,7 @@ local function handler_real_nodes(handler, result)
         action_3 = delete_action,
         action_edit_source = edit_source_action,
         lazy_children = function()
-          return connection_nodes(handler, conn, result)
+          return load_connection(conn)
         end,
       } --[[@as DrawerUINode]]
 
@@ -271,14 +270,14 @@ local function handler_help_nodes()
 end
 
 ---@param handler Handler
----@param result ResultUI
+---@param load_connection fun(conn: ConnectionParams): DrawerUINode[]
 ---@return DrawerUINode[]
-function M.handler_nodes(handler, result)
+function M.handler_nodes(handler, load_connection)
   -- in case there are no sources defined, return helper nodes
   if #handler:get_sources() < 1 then
     return handler_help_nodes()
   end
-  return handler_real_nodes(handler, result)
+  return handler_real_nodes(handler, load_connection)
 end
 
 -- whitespace between nodes
@@ -313,17 +312,16 @@ local function modified_suffix(bufnr, refresh)
 end
 
 ---@param editor EditorUI
----@param namespace namespace_id
 ---@param refresh fun() function that refreshes the tree
 ---@return DrawerUINode[]
-local function editor_namespace_nodes(editor, namespace, refresh)
+local function editor_sql_nodes(editor, refresh)
   ---@type DrawerUINode[]
   local nodes = {}
 
   table.insert(
     nodes,
     NuiTree.Node {
-      id = "__new_" .. namespace .. "_note__",
+      id = "__new_global_note__",
       name = "new",
       type = "add",
       action_1 = function(cb, _, input)
@@ -334,7 +332,7 @@ local function editor_namespace_nodes(editor, namespace, refresh)
             if not value or value == "" then
               return
             end
-            local id = editor:namespace_create_note(namespace, value)
+            local id = editor:namespace_create_note("global", value)
             editor:set_current_note(id)
             cb()
           end,
@@ -343,8 +341,7 @@ local function editor_namespace_nodes(editor, namespace, refresh)
     } --[[@as DrawerUINode]]
   )
 
-  -- global notes
-  for _, note in ipairs(editor:namespace_get_notes(namespace)) do
+  for _, note in ipairs(editor:get_notes()) do
     local node = NuiTree.Node {
       id = note.id,
       name = note.name .. modified_suffix(note.bufnr, refresh),
@@ -372,6 +369,7 @@ local function editor_namespace_nodes(editor, namespace, refresh)
           items = { "Yes", "No" },
           on_confirm = function(selection)
             if selection == "Yes" then
+              local _, namespace = editor:search_note(note.id)
               editor:namespace_remove_note(namespace, note.id)
             end
             cb()
@@ -387,34 +385,19 @@ local function editor_namespace_nodes(editor, namespace, refresh)
 end
 
 ---@param editor EditorUI
----@param current_connection_id connection_id
 ---@param refresh fun() function that refreshes the tree
 ---@return DrawerUINode[]
-function M.editor_nodes(editor, current_connection_id, refresh)
+function M.editor_nodes(editor, refresh)
   local nodes = {
     NuiTree.Node({
-      id = "__master_note_global__",
-      name = "global notes",
+      id = "__master_sql__",
+      name = "sql",
       type = "note",
-    }, editor_namespace_nodes(editor, "global", refresh)),
+    }, editor_sql_nodes(editor, refresh)),
   }
 
-  if utils.once("editor_global_expand") then
+  if utils.once("editor_sql_expand") then
     nodes[1]:expand()
-  end
-
-  if current_connection_id then
-    table.insert(
-      nodes,
-      NuiTree.Node({
-        id = "__master_note_local__",
-        name = "local notes",
-        type = "note",
-      }, editor_namespace_nodes(editor, current_connection_id, refresh))
-    )
-    if utils.once("editor_local_expand") then
-      nodes[2]:expand()
-    end
   end
 
   return nodes

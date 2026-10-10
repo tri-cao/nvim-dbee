@@ -32,7 +32,7 @@ local handler = {
 local editor = {
   get_current_note = function() end,
   register_event_listener = function() end,
-  namespace_get_notes = function()
+  get_notes = function()
     return {}
   end,
 }
@@ -42,15 +42,16 @@ drawer:show(drawer_win)
 
 local function check_layout()
   local nodes = drawer.tree:get_nodes()
-  assert(nodes[#nodes - 1].name == "global notes", "global notes are not at the bottom")
-  assert(nodes[#nodes].name == "local notes", "local notes are not last")
+  assert(nodes[#nodes].name == "sql", "sql is not at the bottom")
+  assert(not drawer.tree:get_node("__master_note_global__"), "global notes are still in the tree")
+  assert(not drawer.tree:get_node("__master_note_local__"), "local notes are still in the tree")
   assert(not drawer.tree:get_node("__help_node__"), "help is still in the tree")
 end
 check_layout()
-drawer.tree:get_node("__master_note_global__"):collapse()
+drawer.tree:get_node("__master_sql__"):collapse()
 drawer:refresh()
 check_layout()
-assert(not drawer.tree:get_node("__master_note_global__"):is_expanded(), "refresh lost expansion state")
+assert(not drawer.tree:get_node("__master_sql__"):is_expanded(), "refresh lost expansion state")
 
 local function press(key)
   vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(key, true, false, true), "xt", false)

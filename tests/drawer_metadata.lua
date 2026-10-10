@@ -5,6 +5,7 @@ package.loaded["dbee.api.ui"] = {}
 
 local listeners, refreshes, scopes = {}, {}, {}
 local structure_reads = {}
+local loads = {}
 local current_database = ""
 local source = {
   name = function()
@@ -49,11 +50,15 @@ local handler = {
     scopes[#refreshes] = scope
     listeners.metadata_refresh_state_changed { conn_id = id, node_id = scope and scope.node_id, refreshing = true }
   end,
+  connection_load_metadata_async = function(_, id)
+    loads[#loads + 1] = id
+    listeners.metadata_refresh_state_changed { conn_id = id, refreshing = true }
+  end,
 }
 local editor = {
   get_current_note = function() end,
   register_event_listener = function() end,
-  namespace_get_notes = function()
+  get_notes = function()
     return {}
   end,
 }
@@ -81,10 +86,18 @@ end
 -- Refreshing a column targets its table and animates only that row.
 select("Other DB")
 drawer:do_action("expand")
+assert(loads[1] == "other" and not structure_reads.other, "initial expansion read metadata synchronously")
+-- Collapsing before completion stays collapsed, then reopens from the warm cache.
+drawer:do_action("collapse")
+finish("other")
+assert(not drawer.tree:get_node("other"):is_expanded(), "initial load reopened a collapsed connection")
+drawer:do_action("expand")
+assert(#loads == 1, "reopening a loaded connection started another background load")
 local other_reads = structure_reads.other
 local other_children = drawer.tree:get_nodes("other")
 select("Test DB")
 drawer:do_action("expand")
+finish("conn")
 select("public")
 drawer:do_action("expand")
 select("users")
@@ -196,6 +209,22 @@ scope = scopes[#refreshes]
 assert(scope and #scope.path == 0, "database refresh did not target the selected database")
 assert(line("warehouse"):find("⠋", 1, true), "database spinner is missing")
 finish("conn", nil, scope)
+
+-- A failed first load clears progress and can be retried by opening the node.
+drawer.metadata_loaded.other = nil
+select("Other DB")
+drawer:do_action("collapse")
+drawer:do_action("expand")
+vim.notify = function() end
+finish("other", "initial load failed")
+vim.notify = notify
+assert(not drawer.metadata_loading.other and not drawer.metadata_loaded.other, "failed load was marked ready")
+assert(not drawer.spinner_timer, "failed initial load leaked the spinner")
+local load_count = #loads
+drawer:do_action("collapse")
+drawer:do_action("expand")
+assert(#loads == load_count + 1, "failed initial load could not be retried")
+finish("other")
 
 -- Wiping the drawer stops the animation even while metadata is still loading.
 select("Test DB")

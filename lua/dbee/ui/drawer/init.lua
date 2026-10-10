@@ -35,6 +35,8 @@ local expansion = require("dbee.ui.drawer.expansion")
 ---@field private window_options table<string, any> a table of window options.
 ---@field private buffer_options table<string, any> a table of buffer options.
 ---@field private refreshing table<string, boolean>
+---@field private metadata_loaded table<connection_id, ConnectionParams>
+---@field private metadata_loading table<connection_id, ConnectionParams>
 ---@field private spinner string[]
 ---@field private spinner_index integer
 ---@field private spinner_timer? integer
@@ -78,6 +80,8 @@ function DrawerUI:new(handler, editor, result, opts, progress_opts)
     current_conn_id = current_conn.id,
     current_note_id = current_note.id,
     refreshing = {},
+    metadata_loaded = {},
+    metadata_loading = {},
     spinner = progress_opts.spinner and #progress_opts.spinner > 0 and progress_opts.spinner or { "|", "/", "-", "\\" },
     spinner_index = 1,
     window_options = vim.tbl_extend("force", {
@@ -161,6 +165,11 @@ function DrawerUI:on_metadata_refresh_state_changed(data)
     end
     self.tree:render()
   else
+    local loading = self.metadata_loading[data.conn_id]
+    self.metadata_loading[data.conn_id] = nil
+    if not data.error and loading then
+      self.metadata_loaded[data.conn_id] = loading
+    end
     if not next(self.refreshing) then
       self:stop_metadata_spinner()
     end
@@ -481,16 +490,38 @@ function DrawerUI:refresh_connection(id)
   self.tree:render()
 end
 
+---@private
+---@param conn ConnectionParams
+---@return DrawerUINode[]
+function DrawerUI:load_connection_nodes(conn)
+  local loaded = self.metadata_loaded[conn.id]
+  if loaded and loaded.type == conn.type and loaded.url == conn.url then
+    return convert.connection_nodes(self.handler, conn, self.result)
+  end
+  if not self.metadata_loading[conn.id] and not self.refreshing[conn.id] then
+    self.metadata_loading[conn.id] = conn
+    local ok, err = pcall(self.handler.connection_load_metadata_async, self.handler, conn.id)
+    if not ok then
+      self.metadata_loading[conn.id] = nil
+      error(err, 0)
+    end
+  end
+  -- Keep an empty child list so expansion survives until the completion event.
+  return {}
+end
+
 ---Refreshes the tree.
 function DrawerUI:refresh()
   -- assemble tree layout
   ---@type DrawerUINode[]
   local nodes = {}
-  for _, ly in ipairs(convert.handler_nodes(self.handler, self.result)) do
+  for _, ly in ipairs(convert.handler_nodes(self.handler, function(conn)
+    return self:load_connection_nodes(conn)
+  end)) do
     table.insert(nodes, ly)
   end
   table.insert(nodes, convert.separator_node())
-  local editor_nodes = convert.editor_nodes(self.editor, self.current_conn_id, function()
+  local editor_nodes = convert.editor_nodes(self.editor, function()
     self:refresh()
   end)
   for _, ly in ipairs(editor_nodes) do

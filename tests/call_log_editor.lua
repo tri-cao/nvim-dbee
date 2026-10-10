@@ -27,8 +27,12 @@ local handler = {
   register_event_listener = function(_, event, callback)
     listeners[event] = callback
   end,
-  connection_get_calls = function(_, id)
-    return calls[id] or {}
+  get_calls = function()
+    local all = {}
+    for _, entries in pairs(calls) do
+      vim.list_extend(all, entries)
+    end
+    return all
   end,
   connection_execute = function()
     error("editing a history query executed it")

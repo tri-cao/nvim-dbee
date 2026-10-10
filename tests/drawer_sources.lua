@@ -17,9 +17,13 @@ end
 local source = require("dbee.sources").FileSource:new("/tmp/dbee/persistence.json")
 local readonly = require("dbee.sources").MemorySource:new({}, "readonly")
 local connections = {}
+local listeners, loads, ready = {}, {}, {}
+local structure_reads = 0
 local handler = {
   get_current_connection = function() end,
-  register_event_listener = function() end,
+  register_event_listener = function(_, event, callback)
+    listeners[event] = callback
+  end,
   get_sources = function()
     return { source, readonly }
   end,
@@ -35,8 +39,16 @@ local handler = {
     assert(id == "persistence.json", "reload used the display label as source id")
     reload_count = reload_count + 1
   end,
-  set_current_connection = function() end,
-  connection_get_structure = function()
+  set_current_connection = function(_, id)
+    listeners.current_connection_changed { conn_id = id }
+  end,
+  connection_load_metadata_async = function(_, id)
+    loads[#loads + 1] = id
+    listeners.metadata_refresh_state_changed { conn_id = id, refreshing = true }
+  end,
+  connection_get_structure = function(_, id)
+    assert(ready[id], "metadata was read before the background load finished")
+    structure_reads = structure_reads + 1
     return {
       {
         name = "public",
@@ -51,14 +63,15 @@ local handler = {
   connection_get_columns = function()
     return { { name = "id", type = "integer" } }
   end,
-  connection_list_databases = function()
+  connection_list_databases = function(_, id)
+    assert(ready[id], "database selector was read before the background load finished")
     return "", {}
   end,
 }
 local editor = {
   get_current_note = function() end,
   register_event_listener = function() end,
-  namespace_get_notes = function()
+  get_notes = function()
     return {}
   end,
 }
@@ -101,14 +114,34 @@ assert(edit_options.title == "Edit Source")
 edit_options.callback()
 assert(reload_count == 1, "saving source did not reload it")
 select_node("Test DB")
-drawer:do_action("expand")
+-- Enter on a newly added connection starts background loading and renders progress.
+press(vim.api.nvim_replace_termcodes("<CR>", true, false, true))
+assert(loads[1] == "conn" and structure_reads == 0, "Enter did not load the new connection asynchronously")
+assert(drawer.spinner_timer and drawer.refreshing.conn, "new connection did not show a spinner")
+assert(
+  table.concat(vim.api.nvim_buf_get_lines(drawer.bufnr, 0, -1, false), "\n"):find("Test DB " .. drawer.spinner[1], 1, true),
+  "initial spinner was not rendered beside the new connection"
+)
+assert(drawer.tree:get_node("conn"):is_expanded(), "new connection did not remember expansion while loading")
+drawer:refresh()
+assert(#loads == 1 and structure_reads == 0, "refresh duplicated or blocked the initial load")
+-- Users can collapse and reopen the connection while the load is running.
+select_node("Test DB")
+drawer:do_action("action_1")
+assert(not drawer.tree:get_node("conn"):is_expanded(), "loading connection did not collapse")
+drawer:do_action("action_1")
+assert(#loads == 1 and structure_reads == 0, "reopening started a duplicate load")
+ready.conn = true
+listeners.metadata_refresh_state_changed { conn_id = "conn", refreshing = false }
+assert(not drawer.spinner_timer and not drawer.refreshing.conn, "initial load leaked its spinner")
+assert(drawer.tree:get_node("conn"):is_expanded(), "completion collapsed the new connection")
 select_node("public")
 drawer:do_action("expand")
 select_node("users")
 drawer:do_action("expand")
 
 -- e never acts on descendants, notes, separators, or read-only connections.
-for _, name in ipairs { "public", "users", "id   [integer]", "global notes", "Read-only DB" } do
+for _, name in ipairs { "public", "users", "id   [integer]", "sql", "Read-only DB" } do
   select_node(name)
   press("e")
   assert(edit_count == 1, "e acted on " .. name)
@@ -128,4 +161,13 @@ for line, text in ipairs(vim.api.nvim_buf_get_lines(drawer.bufnr, 0, -1, false))
     break
   end
 end
+-- Editing a connection's URL must load the new metadata in the background too.
+connections = { { id = "conn", name = "Test DB", type = "sqlite", url = "/tmp/changed.db" } }
+ready.conn = nil
+local previous_reads = structure_reads
+drawer:refresh()
+assert(#loads == 2 and structure_reads == previous_reads, "edited connection reused old readiness or blocked the UI")
+ready.conn = true
+listeners.metadata_refresh_state_changed { conn_id = "conn", refreshing = false }
+assert(not drawer.spinner_timer, "edited connection load leaked its spinner")
 print("Drawer sources: all checks passed")

@@ -18,8 +18,8 @@ local query_count = 0
 local editor = {
   get_current_note = function() end,
   register_event_listener = function() end,
-  namespace_get_notes = function(_, namespace)
-    return namespace == "global" and { { id = "note", name = "saved.sql", bufnr = note_buf } } or {}
+  get_notes = function()
+    return { { id = "note", name = "saved.sql", bufnr = note_buf } }
   end,
   set_current_note = function(_, id)
     opened_note = id
@@ -28,12 +28,16 @@ local editor = {
   end,
 }
 local source = { name = function() return "mouse-test" end }
+local listeners = {}
 local handler = {
   get_current_connection = function() return { id = "conn" } end,
-  register_event_listener = function() end,
+  register_event_listener = function(_, event, callback) listeners[event] = callback end,
   get_sources = function() return { source } end,
   source_get_connections = function() return { { id = "conn", name = "Test DB" } } end,
   set_current_connection = function(_, id) selected_connection = id end,
+  connection_load_metadata_async = function(_, id)
+    listeners.metadata_refresh_state_changed { conn_id = id, refreshing = true }
+  end,
   connection_get_structure = function()
     return {
       { name = "public", schema = "", type = "schema", children = {
@@ -81,10 +85,10 @@ local function click(line, modifiers)
 end
 
 -- Single clicks only select; double clicks must target the mouse, not the old cursor.
-vim.api.nvim_win_set_cursor(drawer_win, { node_line("global notes"), 0 })
+vim.api.nvim_win_set_cursor(drawer_win, { node_line("sql"), 0 })
 click(node_line("saved.sql"), "")
 assert(not opened_note, "single click opened a note")
-vim.api.nvim_win_set_cursor(drawer_win, { node_line("global notes"), 0 })
+vim.api.nvim_win_set_cursor(drawer_win, { node_line("sql"), 0 })
 click(node_line("saved.sql"), "2")
 assert(opened_note == "note", "double click did not open the clicked note")
 assert(vim.api.nvim_win_get_buf(editor_win) == note_buf, "note buffer is missing from the editor")
@@ -92,6 +96,7 @@ assert(vim.fn.mode() == "n", "double click entered Visual mode")
 
 -- Clicking from the editor focuses the drawer and toggles its grouping nodes.
 click(node_line("Test DB"))
+listeners.metadata_refresh_state_changed { conn_id = "conn", refreshing = false }
 assert(selected_connection == "conn", "connection was not activated")
 assert(vim.api.nvim_get_current_win() == drawer_win, "mouse did not focus the drawer")
 click(node_line("public"))

@@ -104,7 +104,7 @@ func (c *Call) UnmarshalJSON(data []byte) error {
 
 func newCallFromExecutor(executor func(context.Context) (ResultStream, error), query string, onEvent func(CallState, *Call), connID ConnectionID) *Call {
 	id := CallID(uuid.New().String())
-	cache, lease, claimErr := cacheForConnection(connID).claim(id)
+	cache, lease, claimErr := cacheForHistory().claim(id)
 	if cache == nil {
 		cache = &resultCache{}
 	}
@@ -203,6 +203,10 @@ func newCallFromExecutor(executor func(context.Context) (ResultStream, error), q
 
 func (c *Call) GetID() CallID {
 	return c.id
+}
+
+func (c *Call) GetConnectionID() ConnectionID {
+	return c.connectionID
 }
 
 func (c *Call) GetQuery() string {

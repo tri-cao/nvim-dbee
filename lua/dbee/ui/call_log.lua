@@ -12,7 +12,7 @@ local action_descriptions = {
   cancel_call = "Cancel selected query if still executing",
 }
 
--- CallLogUI is connection's call history.
+-- CallLogUI is the global query history.
 ---@class CallLogUI
 ---@field private result ResultUI
 ---@field private editor EditorUI
@@ -175,6 +175,8 @@ function CallLogUI:create_tree(bufnr)
 
       line:append(make_length(state_preview, 3), candy.icon_highlight)
       line:append(" ┃ ", "NonText")
+      line:append(make_length(call.connection_id or "", 16), "Comment")
+      line:append(" ┃ ", "NonText")
       line:append(make_length(string.gsub(call.query, "\n", " "), 40), candy.text_highlight)
 
       return line
@@ -266,10 +268,7 @@ function CallLogUI:do_action(action)
 end
 
 function CallLogUI:refresh()
-  if not self.current_connection_id then
-    return
-  end
-  local calls = self.handler:connection_get_calls(self.current_connection_id)
+  local calls = self.handler:get_calls()
 
   -- dummy node if no calls
   if vim.tbl_isempty(calls) then
@@ -284,7 +283,7 @@ function CallLogUI:refresh()
 
   local nodes = {}
   for _, c in ipairs(calls) do
-    table.insert(nodes, NuiTree.Node { id = tostring(math.random()), call = c })
+    table.insert(nodes, NuiTree.Node { id = c.id, call = c })
   end
 
   self.tree:set_nodes(nodes)
@@ -332,6 +331,7 @@ function CallLogUI:configure_preview(bufnr)
 
       local call_summary = {
         { key = "id", value = call.id },
+        { key = "connection", value = call.connection_id or "" },
         { key = "query", value = string.gsub(call.query, "\n", " ") },
         { key = "state", value = call.state },
         { key = "time_taken", value = string.format("%.3f seconds", (call.time_taken_us or 0) / 1000000) },

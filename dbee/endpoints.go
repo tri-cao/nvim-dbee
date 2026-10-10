@@ -103,6 +103,10 @@ func mountEndpoints(p *plugin.Plugin, h *handler.Handler) {
 			return handler.WrapCall(call), err
 		})
 
+	p.RegisterEndpoint("DbeeGetCalls", func() (any, error) {
+		return handler.WrapCalls(h.GetCalls()), nil
+	})
+
 	p.RegisterEndpoint(
 		"DbeeConnectionGetCalls",
 		func(args *struct {
@@ -173,6 +177,12 @@ func mountEndpoints(p *plugin.Plugin, h *handler.Handler) {
 	}) (any, error) {
 		structure, err := h.ConnectionRefreshMetadata(args.ID, args.Scope)
 		return handler.WrapStructures(structure), err
+	})
+
+	p.RegisterEndpoint("DbeeConnectionLoadMetadataAsync", func(args *struct {
+		ID core.ConnectionID `msgpack:",array"`
+	}) error {
+		return h.ConnectionLoadMetadataAsync(args.ID)
 	})
 
 	p.RegisterEndpoint("DbeeConnectionRefreshMetadataAsync", func(args *struct {

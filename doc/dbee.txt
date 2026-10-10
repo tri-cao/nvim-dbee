@@ -517,6 +517,8 @@ Here are a few steps to quickly get started:
         - Press `o` on a connection or any dataset, database, table, or column inside it to open that
             connection's `scratchpad.sql` and focus the editor. The scratchpad is created once and reused.
     - Scratchpads:
+        - The `sql` section contains all scratchpads, including every connection's scratchpad.
+            It is shared across projects and stays the same when you switch connections.
         - Press `<CR>` on the `new` node to create a new scratchpad.
         - When you try to save it to disk (`:w`), the path is automatically filled for you. You can
             change the name to anything you want, if you save it to the suggested directory, it will load
@@ -542,9 +544,10 @@ Here are a few steps to quickly get started:
     longer than 50 characters show their first 50 characters followed by `...`;
     copying and exporting still use the full values.
     Tabs and line breaks appear as \t and \n in the preview to keep columns aligned.
-    Each connection keeps results for its 10 most recent queries in /tmp/dbee-results/,
-    available from the call log even after restarting. Starting an 11th query replaces
-    the oldest result; failed and canceled queries also count toward this limit.
+    The global call log keeps the 20 most recent queries and their results across
+    all connections in /tmp/dbee-results/,
+    available from the call log even after restarting. Starting a 21st query replaces
+    the oldest query and result; failed and canceled queries also count toward this limit.
     The schema/table/column metadata cache stays separate in metadata.sqlite3
     and is unaffected by query execution.
     If the total number of results was lower than the
@@ -855,8 +858,8 @@ Description:
     - `ui` package consists of the following packages:
         - `Drawer` represents the tree view. It uses the handler and editor to provide the view of
             connections and notes.
-        - `Editor` represents the notepad view. It manages notes per namespace (namespace is an
-            arbitrary name - Drawer uses it to have connection-local notes).
+        - `Editor` represents the notepad view. It stores notes by namespace to retain connection
+            associations. Drawer lists all namespaces together in the shared `sql` section.
         - `Result` represents the results view.
         - `Call Log` represents the history of calls vie view and supports managing past calls.
 - `install` package is independent of the other packages and is used for

@@ -10,11 +10,16 @@ package.loaded["dbee.layouts"] = { Default = {
 vim.o.backspace = "indent,eol,start"
 vim.o.showmode = false
 local conn = { id = "test", type = "postgres", name = "Test" }
+-- Match the RPC response of a warmed adapter without database switching.
+vim.fn.DbeeConnectionListDatabases = function()
+  return { "", vim.NIL }
+end
 local handler = {
   get_current_connection = function()
     return conn
   end,
   register_event_listener = function() end,
+  connection_list_databases = require("dbee.handler").connection_list_databases,
   connection_get_structure = function()
     return {
       {

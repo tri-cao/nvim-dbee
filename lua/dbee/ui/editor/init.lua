@@ -403,6 +403,33 @@ function EditorUI:namespace_get_notes(id)
   return notes_list
 end
 
+---List all scratchpads in the shared storage, including unopened connection notes.
+---@return note_details[]
+function EditorUI:get_notes()
+  if vim.fn.isdirectory(self.directory) == 1 then
+    -- Connection IDs such as file_source_/... create nested namespace directories.
+    for namespace, kind in vim.fs.dir(self.directory, { depth = math.huge }) do
+      if kind == "directory" then
+        self:namespace_get_notes(namespace)
+      end
+    end
+  end
+
+  local notes = {}
+  for _, per_namespace in pairs(self.notes) do
+    for _, note in pairs(per_namespace) do
+      table.insert(notes, note)
+    end
+  end
+  table.sort(notes, function(a, b)
+    if a.name == b.name then
+      return a.file < b.file
+    end
+    return a.name < b.name
+  end)
+  return notes
+end
+
 -- If no notes were found, return an empty table.
 ---@private
 ---@param namespace_id namespace_id

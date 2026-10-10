@@ -17,11 +17,14 @@ import (
 
 func init() { gob.Register(time.Time{}) }
 
-const resultCacheBasePath = "/tmp/dbee-results"
+var resultCacheBasePath = "/tmp/dbee-results"
+
 const resultChunkSize = 500
 const resultMagic = "DBEERS02"
 const resultPreambleSize = 16
-const connectionResultLimit = 10
+
+// CallHistoryLimit bounds query history and result slots across all connections.
+const CallHistoryLimit = 20
 
 var ErrResultOverwritten = errors.New("result cache was replaced by a newer query")
 var errIncompleteResult = errors.New("result cache is not complete")
@@ -45,14 +48,14 @@ type resultCache struct {
 }
 
 type resultCacheHistory struct {
-	Next  int                           `json:"next"`
-	Calls [connectionResultLimit]CallID `json:"calls"`
+	Next  int                      `json:"next"`
+	Calls [CallHistoryLimit]CallID `json:"calls"`
 }
 
 type connectionResultCache struct {
 	mu      sync.Mutex
 	path    string
-	slots   [connectionResultLimit]*resultCache
+	slots   [CallHistoryLimit]*resultCache
 	history resultCacheHistory
 	err     error
 }
@@ -65,6 +68,18 @@ func connectionResultPath(id ConnectionID) string {
 
 func cacheForConnection(id ConnectionID) *connectionResultCache {
 	path := connectionResultPath(id)
+	return cacheForPath(path)
+}
+
+func globalResultPath() string {
+	return filepath.Join(resultCacheBasePath, "global.gob")
+}
+
+func cacheForHistory() *connectionResultCache {
+	return cacheForPath(globalResultPath())
+}
+
+func cacheForPath(path string) *connectionResultCache {
 	if cached, ok := connectionResultCaches.Load(path); ok {
 		return cached.(*connectionResultCache)
 	}
@@ -79,7 +94,7 @@ func cacheForConnection(id ConnectionID) *connectionResultCache {
 	data, err := os.ReadFile(cache.path)
 	if err == nil {
 		cache.err = json.Unmarshal(data, &cache.history)
-		if cache.history.Next < 0 || cache.history.Next >= connectionResultLimit {
+		if cache.history.Next < 0 || cache.history.Next >= CallHistoryLimit {
 			cache.err = errors.New("invalid result cache history position")
 		}
 	} else if os.IsNotExist(err) {
@@ -129,7 +144,7 @@ func (cache *connectionResultCache) claim(id CallID) (*resultCache, *cacheLease,
 	history := cache.history
 	slot := history.Next
 	history.Calls[slot] = id
-	history.Next = (slot + 1) % connectionResultLimit
+	history.Next = (slot + 1) % CallHistoryLimit
 	data, err := json.Marshal(history)
 	if err != nil {
 		return nil, nil, err
@@ -232,7 +247,12 @@ type archive struct {
 }
 
 func newArchive(connID ConnectionID, id CallID) *archive {
-	return &archive{id: id, cache: cacheForConnection(connID).forCall(id)}
+	cache := cacheForHistory().forCall(id)
+	if !cache.isCurrent(id) {
+		// Older versions stored results separately for each connection.
+		cache = cacheForConnection(connID).forCall(id)
+	}
+	return &archive{id: id, cache: cache}
 }
 
 func (a *archive) isEmpty() bool {
