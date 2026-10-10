@@ -2,6 +2,14 @@ local NuiLine = require("nui.line")
 local NuiTree = require("nui.tree")
 local utils = require("dbee.utils")
 local common = require("dbee.ui.common")
+local help = require("dbee.ui.common.help")
+
+local action_descriptions = {
+  show_help = "Show query history keybindings",
+  show_result = "Show result of selected query",
+  yank_query = "Copy entire selected query",
+  cancel_call = "Cancel selected query if still executing",
+}
 
 -- CallLogUI is connection's call history.
 ---@class CallLogUI
@@ -15,6 +23,7 @@ local common = require("dbee.ui.common")
 ---@field private hover_close? fun() function that closes the hover window
 ---@field private window_options table<string, any> a table of window options.
 ---@field private buffer_options table<string, any> a table of buffer options.
+---@field private mappings key_mapping[]
 local CallLogUI = {}
 
 ---@param handler Handler
@@ -41,6 +50,7 @@ function CallLogUI:new(handler, result, opts)
     handler = handler,
     result = result,
     candies = candies,
+    mappings = opts.mappings or {},
     hover_close = function() end,
     current_connection_id = (handler:get_current_connection() or {}).id,
     window_options = vim.tbl_extend("force", {
@@ -64,7 +74,7 @@ function CallLogUI:new(handler, result, opts)
 
   -- create a buffer for drawer and configure it
   o.bufnr = common.create_blank_buffer("dbee-call-log", o.buffer_options)
-  common.configure_buffer_mappings(o.bufnr, o:get_actions(), opts.mappings)
+  common.configure_buffer_mappings(o.bufnr, o:get_actions(), o.mappings)
 
   -- create the tree
   o.tree = o:create_tree(o.bufnr)
@@ -175,6 +185,15 @@ end
 ---@return table<string, fun()>
 function CallLogUI:get_actions()
   return {
+    show_help = function()
+      local lines = { "Query history", "" }
+      for _, km in ipairs(self.mappings) do
+        if km.key and km.mode and km.action then
+          table.insert(lines, help.mapping_line(km, action_descriptions))
+        end
+      end
+      help.show("Query history keybindings", lines)
+    end,
     show_result = function()
       local node = self.tree:get_node()
       if not node then
@@ -189,6 +208,14 @@ function CallLogUI:get_actions()
         self.result:set_call(call)
         self.result:page_current()
       end
+    end,
+    yank_query = function()
+      local node = self.tree:get_node()
+      if not node or not node.call then
+        return
+      end
+
+      vim.fn.setreg(vim.v.register, node.call.query, "v")
     end,
     cancel_call = function()
       local node = self.tree:get_node()

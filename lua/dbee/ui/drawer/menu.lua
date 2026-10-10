@@ -1,6 +1,6 @@
 local NuiMenu = require("nui.menu")
 local NuiInput = require("nui.input")
-local NuiPopup = require("nui.popup")
+local help = require("dbee.ui.common.help")
 
 local M = {}
 
@@ -31,12 +31,7 @@ function M.help(mappings)
   local menu_lines = { "", "Menus", "" }
   for _, km in ipairs(mappings or {}) do
     if km.key and km.mode and km.action then
-      local description = km.opts and km.opts.desc
-      if not description then
-        description = type(km.action) == "string" and (action_descriptions[km.action] or km.action) or "Custom action"
-      end
-      local mode = type(km.mode) == "table" and table.concat(km.mode, ", ") or km.mode
-      local line = string.format("  %s (%s)  %s", km.key, mode, description)
+      local line = help.mapping_line(km, action_descriptions)
       local is_menu = type(km.action) == "string" and km.action:match("^menu_")
       table.insert(is_menu and menu_lines or lines, line)
     end
@@ -44,43 +39,7 @@ function M.help(mappings)
   vim.list_extend(lines, menu_lines)
   table.insert(lines, "  j / <Down> / <Tab> (n)  Next menu item")
   table.insert(lines, "  k / <Up> / <S-Tab> (n)  Previous menu item")
-  vim.list_extend(lines, { "", "Help popup: q / <Esc> / ? to close; j / k to scroll" })
-
-  local width = 0
-  for _, line in ipairs(lines) do
-    width = math.max(width, vim.fn.strdisplaywidth(line))
-  end
-  width = math.max(1, math.min(width, vim.o.columns - 4))
-  local height = 0
-  for _, line in ipairs(lines) do
-    height = height + math.max(1, math.ceil(vim.fn.strdisplaywidth(line) / width))
-  end
-  height = math.max(1, math.min(height, vim.o.lines - vim.o.cmdheight - 4))
-
-  local popup = NuiPopup {
-    enter = true,
-    relative = "editor",
-    position = "50%",
-    size = { width = width, height = height },
-    zindex = 160,
-    border = {
-      style = "rounded",
-      text = { top = " Tree drawer keybindings ", top_align = "center" },
-    },
-    buf_options = { buftype = "nofile", swapfile = false },
-    win_options = { wrap = true, linebreak = true, number = false, relativenumber = false },
-  }
-  popup:mount()
-  vim.api.nvim_buf_set_lines(popup.bufnr, 0, -1, false, lines)
-  vim.api.nvim_set_option_value("modifiable", false, { buf = popup.bufnr })
-  for _, key in ipairs { "q", "<Esc>", "?" } do
-    popup:map("n", key, function()
-      popup:unmount()
-    end, { noremap = true, nowait = true, silent = true })
-  end
-  popup:on("BufLeave", function()
-    popup:unmount()
-  end, { once = true })
+  help.show("Tree drawer keybindings", lines)
 end
 
 ---@alias menu_select fun(opts?: { title: string, items: string[], on_confirm: fun(selection: string), on_yank: fun(selection: string) })

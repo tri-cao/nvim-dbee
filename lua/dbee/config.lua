@@ -266,6 +266,8 @@ config.default = {
 
     -- mappings for the buffer
     mappings = {
+      -- show all result keybindings in a popup
+      { key = "?", mode = "n", action = "show_help" },
       -- cycle only through open scratchpads
       {
         key = "[b",
@@ -341,6 +343,8 @@ config.default = {
 
     -- mappings for the buffer
     mappings = {
+      -- show all query history keybindings in a popup
+      { key = "?", mode = "n", action = "show_help" },
       -- cycle only through open scratchpads
       {
         key = "[b",
@@ -360,6 +364,8 @@ config.default = {
       },
       -- show the result of the currently selected call record
       { key = "<CR>", mode = "", action = "show_result" },
+      -- copy the entire query of the currently selected call record
+      { key = "yy", mode = "n", action = "yank_query" },
       -- cancel the currently selected call (if its still executing)
       { key = "<C-c>", mode = "", action = "cancel_call" },
     },

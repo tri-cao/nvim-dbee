@@ -3,6 +3,25 @@ local progress = require("dbee.ui.result.progress")
 local common = require("dbee.ui.common")
 local Header = require("dbee.ui.result.header")
 
+local action_descriptions = {
+  show_help = "Show result keybindings",
+  word_next = "Next word within current row",
+  word_prev = "Previous word within current row",
+  big_word_next = "Next WORD within current row",
+  big_word_prev = "Previous WORD within current row",
+  page_next = "Next result page",
+  page_prev = "Previous result page",
+  page_last = "Last result page",
+  page_first = "First result page",
+  yank_current_json = "Copy current row as JSON",
+  yank_selection_json = "Copy selected rows as JSON",
+  yank_all_json = "Copy all rows as JSON",
+  yank_current_csv = "Copy current row as CSV",
+  yank_selection_csv = "Copy selected rows as CSV",
+  yank_all_csv = "Copy all rows as CSV",
+  cancel_call = "Cancel current query",
+}
+
 -- ResultUI represents the part of ui with displayed results
 ---@class ResultUI
 ---@field private handler Handler
@@ -276,6 +295,16 @@ end
 ---@return table<string, fun()>
 function ResultUI:get_actions()
   return {
+    show_help = function()
+      local help = require("dbee.ui.common.help")
+      local lines = { "Results", "" }
+      for _, km in ipairs(self.mappings) do
+        if km.key and km.mode and km.action then
+          table.insert(lines, help.mapping_line(km, action_descriptions))
+        end
+      end
+      help.show("Result keybindings", lines)
+    end,
     word_next = function()
       self:move_word("w")
     end,
