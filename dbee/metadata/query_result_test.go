@@ -31,7 +31,12 @@ func TestQueryResultDoesNotOverwriteMetadata(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(connection.Close)
 	t.Cleanup(func() {
-		_ = os.Remove(filepath.Join("/tmp/dbee-results", fmt.Sprintf("%x.gob", sha256.Sum256([]byte(connection.GetID())))))
+		base := filepath.Join("/tmp/dbee-results", fmt.Sprintf("%x.gob", sha256.Sum256([]byte(connection.GetID()))))
+		files, err := filepath.Glob(base + "*")
+		require.NoError(t, err)
+		for _, file := range files {
+			_ = os.Remove(file)
+		}
 	})
 	for range 2 {
 		call := connection.Execute("select value", nil)

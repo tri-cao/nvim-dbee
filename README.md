@@ -283,8 +283,9 @@ Here are a few steps to quickly get started:
   the chunks needed for the current page. Values longer than 50 characters show their first
   50 characters followed by `...`; copying and exporting still use the full values.
   Tabs and line breaks appear as `\t` and `\n` in the preview to keep columns aligned.
-  Each connection uses one result file in `/tmp/dbee-results/`; a new query overwrites that file,
-  so older query results become unavailable. The schema/table/column metadata cache stays separate
+  Each connection keeps results for its 10 most recent queries in `/tmp/dbee-results/`,
+  available from the call log even after restarting. Starting an 11th query replaces the oldest
+  result; failed and canceled queries also count toward this limit. The metadata cache stays separate
   in `metadata.sqlite3` and is unaffected by query execution.
   If the total number of results was lower than the `page_size` parameter in config (100
   by default), all results should already be present. If there are more than `page_size` results,

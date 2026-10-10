@@ -95,6 +95,11 @@ function EditorUI:execute_query(bufnr, row, query)
     return
   end
 
+  -- Save the entire scratchpad before executing any of its queries.
+  vim.api.nvim_buf_call(bufnr, function()
+    vim.cmd("silent update")
+  end)
+
   -- Each scratchpad only shows the latest run, regardless of its starting line.
   vim.api.nvim_buf_clear_namespace(bufnr, query_status_ns, 0, -1)
   for id, location in pairs(self.query_calls) do

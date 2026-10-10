@@ -104,8 +104,10 @@ func (c *Call) UnmarshalJSON(data []byte) error {
 
 func newCallFromExecutor(executor func(context.Context) (ResultStream, error), query string, onEvent func(CallState, *Call), connID ConnectionID) *Call {
 	id := CallID(uuid.New().String())
-	cache := cacheForConnection(connID)
-	lease := cache.claim(id)
+	cache, lease, claimErr := cacheForConnection(connID).claim(id)
+	if cache == nil {
+		cache = &resultCache{}
+	}
 	c := &Call{
 		id:           id,
 		connectionID: connID,
@@ -113,7 +115,7 @@ func newCallFromExecutor(executor func(context.Context) (ResultStream, error), q
 		state:        CallStateUnknown,
 
 		result:  new(Result),
-		archive: newArchive(connID, id),
+		archive: &archive{id: id, cache: cache},
 
 		done: make(chan struct{}),
 	}
@@ -150,6 +152,13 @@ func newCallFromExecutor(executor func(context.Context) (ResultStream, error), q
 
 		// execute the function
 		eventsCh <- CallStateExecuting
+		if claimErr != nil {
+			c.timeTaken = time.Since(c.timestamp)
+			c.err = claimErr
+			eventsCh <- CallStateExecutingFailed
+			close(c.done)
+			return
+		}
 		if err := cache.reset(lease); err != nil {
 			c.timeTaken = time.Since(c.timestamp)
 			c.err = err

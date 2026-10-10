@@ -32,7 +32,7 @@ type Result struct {
 }
 
 // SetIter provides a standalone temporary cache. Connection queries use their
-// fixed cache file through setIter instead.
+// reserved cache slot through setIter instead.
 func (cr *Result) SetIter(iter ResultStream, onFillStart func()) error {
 	if err := os.MkdirAll(resultCacheBasePath, 0700); err != nil {
 		iter.Close()

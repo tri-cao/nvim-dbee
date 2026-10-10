@@ -525,6 +525,8 @@ Here are a few steps to quickly get started:
     - Highlight some text in visual mode and press `BB` - this will run the selected query on the
         active connection.
     - If you press `BB` in normal mode, you run the whole scratchpad on the active connection.
+    - Running a query automatically saves the entire scratchpad first. If saving fails, the query
+        is not executed.
     - When a query finishes, its first line shows a green `✓` for success or a red `✗` for failure
         in the sign column before the line number. Each scratchpad shows only its latest query's status;
         starting another query clears the previous sign immediately.
@@ -534,8 +536,9 @@ Here are a few steps to quickly get started:
     longer than 50 characters show their first 50 characters followed by `...`;
     copying and exporting still use the full values.
     Tabs and line breaks appear as \t and \n in the preview to keep columns aligned.
-    Each connection uses one result file in /tmp/dbee-results/;
-    a new query overwrites that file, so older query results become unavailable.
+    Each connection keeps results for its 10 most recent queries in /tmp/dbee-results/,
+    available from the call log even after restarting. Starting an 11th query replaces
+    the oldest result; failed and canceled queries also count toward this limit.
     The schema/table/column metadata cache stays separate in metadata.sqlite3
     and is unaffected by query execution.
     If the total number of results was lower than the

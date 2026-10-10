@@ -16,6 +16,17 @@ local handler = {
   end,
   connection_execute = function(_, connection, query)
     assert(connection == "connection", "wrong connection")
+    if #calls == 0 then
+      local buffer = vim.api.nvim_get_current_buf()
+      assert(not vim.bo[buffer].modified, "Enter executed before saving the scratchpad")
+      assert(
+        vim.deep_equal(
+          vim.fn.readfile(vim.api.nvim_buf_get_name(buffer)),
+          vim.api.nvim_buf_get_lines(buffer, 0, -1, false)
+        ),
+        "Enter did not save the entire scratchpad before executing"
+      )
+    end
     local call = { id = tostring(#calls + 1), query = query, state = state }
     table.insert(calls, call)
     return call
@@ -126,14 +137,20 @@ assert(signs()[4].text == "✓", "running another scratchpad cleared this scratc
 
 -- Whole-file and visual runs also track their first executed line.
 editor:set_current_note(note_id)
+vim.api.nvim_buf_set_lines(buf, 0, 1, false, { "-- whole-file run" })
 call = press("BB")
+assert(not vim.bo[buf].modified, "whole-file run did not save the scratchpad")
+assert(vim.fn.readfile(editor:get_current_note().file)[1] == "-- whole-file run", "whole-file changes were not saved")
 assert(vim.tbl_isempty(signs()), "whole-file run retained a previous sign")
 assert(call.query == table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"), "BB omitted SQL")
 complete(call, "retrieving_failed")
 assert(signs()[0].text == "✗", "whole-file failure was not marked")
 local original_selection = utils.visual_selection
 utils.visual_selection = function() return 4, 0, 4, 9 end
+vim.api.nvim_buf_set_lines(buf, 0, 1, false, { "-- selection run" })
 editor:do_action("run_selection")
+assert(not vim.bo[buf].modified, "visual run did not save the scratchpad")
+assert(vim.fn.readfile(editor:get_current_note().file)[1] == "-- selection run", "visual run omitted unselected edits")
 assert(vim.tbl_isempty(signs()), "visual run retained a previous sign")
 call = calls[#calls]
 assert(call.query == "select 2;", "selection changed SQL")
@@ -141,6 +158,17 @@ complete(call, "archived")
 assert(signs()[4].text == "✓", "selection success was not marked")
 utils.visual_selection = original_selection
 utils.query_under_cursor = original_query
+
+-- A failed save keeps the edits and previous status without executing another query.
+local call_count = #calls
+vim.api.nvim_buf_set_lines(buf, 0, 1, false, { "-- unsaved changes" })
+vim.bo[buf].readonly = true
+local saved = pcall(function() editor:execute_query(buf, 0, "select 1;") end)
+vim.bo[buf].readonly = false
+assert(not saved and #calls == call_count, "query executed despite a failed save")
+assert(vim.bo[buf].modified, "failed save discarded the modified state")
+assert(vim.fn.readfile(editor:get_current_note().file)[1] == "-- selection run", "failed save overwrote the file")
+assert(signs()[4].text == "✓", "failed save cleared the previous query status")
 
 -- Handle immediate completion and every failure without waiting for another event.
 for _, terminal in ipairs { "archived", "executing_failed", "retrieving_failed", "archive_failed" } do
@@ -158,7 +186,11 @@ for _, terminal in ipairs { "canceled", "overwritten" } do
 end
 
 -- A closed buffer must not break subsequent completion callbacks.
+vim.api.nvim_buf_set_lines(second_buf, 0, -1, false, { "select 3;" })
 editor:execute_query(second_buf, 0, "select 3;")
+assert(vim.api.nvim_get_current_buf() == buf, "saving a hidden scratchpad switched buffers")
+assert(not vim.bo[second_buf].modified, "hidden scratchpad was not saved")
+assert(vim.fn.readfile(vim.api.nvim_buf_get_name(second_buf))[1] == "select 3;", "wrong scratchpad was saved")
 call = calls[#calls]
 vim.api.nvim_buf_delete(second_buf, { force = true })
 complete(call, "archived")
