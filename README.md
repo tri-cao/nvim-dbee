@@ -337,6 +337,11 @@ Here are a few steps to quickly get started:
 | `require("dbee").api.ui.result_page_last()`                                          |   Go to the last page   |                                 E                                 |
 | `require("dbee").api.ui.result_page_first()`                                         |  Go to the first page   |                                 F                                 |
 
+- In the "result" buffer, press `R` to rerun the displayed query on its original connection.
+  A spinner appears in the window bar while the previous results and column names stay visible.
+  When the new results are ready, they replace the old table, starting at the first page.
+  `<C-c>` cancels the refresh. Errors and cancellation keep the previous results visible.
+
 - In the "result" buffer, `w`, `b`, `W`, and `B` move between words within the current row in
   normal and visual mode. They stop at the end or start of the row, including counted motions
   such as `3w` or `3W`. `W` and `B` treat each sequence of non-whitespace characters as a word.

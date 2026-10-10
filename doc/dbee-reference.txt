@@ -246,6 +246,7 @@ CallDetails                                                        *CallDetails*
 
     Fields: ~
         {id}             (call_id)
+        {connection_id}  (nil|connection_id)  connection that executed the query
         {time_taken_us}  (integer)     duration (time period) in microseconds
         {query}          (string)
         {state}          (call_state)

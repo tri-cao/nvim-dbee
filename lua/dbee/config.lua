@@ -271,6 +271,8 @@ config.default = {
     mappings = {
       -- show all result keybindings in a popup
       { key = "?", mode = "n", action = "show_help" },
+      -- rerun the displayed query while keeping its previous results visible
+      { key = "R", mode = "n", action = "refresh" },
       -- cycle only through open scratchpads
       {
         key = "[b",

@@ -22,6 +22,7 @@ local action_descriptions = {
   yank_selection_csv = "Copy selected rows as CSV",
   yank_all_csv = "Copy all rows as CSV",
   cancel_call = "Cancel current query",
+  refresh = "Run current query again, keeping results while loading",
 }
 
 -- ResultUI represents the part of ui with displayed results
@@ -30,6 +31,9 @@ local action_descriptions = {
 ---@field private winid? integer
 ---@field private bufnr integer
 ---@field private current_call? CallDetails
+---@field private refresh_call? CallDetails query running while the previous result remains visible
+---@field private refresh_progress? string
+---@field private result_winbar string
 ---@field private page_size integer
 ---@field private focus_result boolean
 ---@field private mappings key_mapping[]
@@ -61,6 +65,7 @@ function ResultUI:new(handler, opts)
     focus_result = opts.focus_result,
     mappings = opts.mappings or {},
     stop_progress = function() end,
+    result_winbar = "Results",
     progress_opts = opts.progress or {},
     window_options = vim.tbl_extend("force", {
       wrap = false,
@@ -92,6 +97,14 @@ function ResultUI:new(handler, opts)
   handler:register_event_listener("call_state_changed", function(data)
     o:on_call_state_changed(data)
   end)
+  vim.api.nvim_create_autocmd("BufWipeout", {
+    buffer = o.bufnr,
+    callback = function()
+      o.stop_progress()
+      o.refresh_call = nil
+      o.refresh_progress = nil
+    end,
+  })
 
   return o
 end
@@ -102,6 +115,26 @@ end
 function ResultUI:on_call_state_changed(data)
   local call = data.call
 
+  if self.refresh_call and call.id == self.refresh_call.id then
+    self.refresh_call = call
+    -- Execute can return before the backend publishes its first executing event.
+    if call.state == "unknown" or call.state == "executing" or call.state == "retrieving" then
+      return
+    end
+    self.stop_progress()
+    if call.state == "archived" or call.state == "archive_failed" then
+      self:set_call(call)
+      self:page_current()
+    else
+      self.refresh_call = nil
+      self.refresh_progress = nil
+      self:update_winbar()
+      local reason = call.error and call.error ~= "" and call.error or call.state
+      vim.notify("DBee: Result refresh failed: " .. reason, vim.log.levels.WARN)
+    end
+    return
+  end
+
   -- we only care about the current call
   if not self.current_call or call.id ~= self.current_call.id then
     return
@@ -109,6 +142,9 @@ function ResultUI:on_call_state_changed(data)
 
   -- update the current call with up to date details
   self.current_call = call
+  if self.refresh_call then
+    return
+  end
 
   -- perform action based on the state
   if call.state == "executing" or call.state == "retrieving" then
@@ -158,8 +194,18 @@ end
 
 ---@private
 function ResultUI:set_default_result_window()
-  if self:has_window() then
-    vim.api.nvim_win_set_option(self.winid, "winbar", "Results")
+  self.result_winbar = "Results"
+  self:update_winbar()
+end
+
+---@private
+function ResultUI:update_winbar()
+  if self:has_window() and vim.api.nvim_win_get_buf(self.winid) == self.bufnr then
+    local winbar = self.result_winbar
+    if self.refresh_progress then
+      winbar = winbar .. " | " .. self.refresh_progress:gsub("%%", "%%%%")
+    end
+    vim.api.nvim_win_set_option(self.winid, "winbar", winbar)
   end
 end
 
@@ -224,6 +270,11 @@ function ResultUI:display_result(page)
   if not self.current_call then
     error("no call set to result")
   end
+  -- Keep the displayed page even if a refresh has evicted its cached call.
+  if self.refresh_call then
+    self:update_winbar()
+    return self.page_index
+  end
   -- Never make a synchronous result RPC while the backend is still draining
   -- the query into its temporary cache, including manual page navigation.
   local state = self.current_call.state
@@ -262,13 +313,8 @@ function ResultUI:display_result(page)
   local seconds = self.current_call.time_taken_us / 1000000
 
   -- set winbar status
-  if self:has_window() then
-    vim.api.nvim_win_set_option(
-      self.winid,
-      "winbar",
-      string.format("%d/%d (%d)%%=Took %.3fs", page + 1, self.page_ammount + 1, length, seconds)
-    )
-  end
+  self.result_winbar = string.format("%d/%d (%d)%%=Took %.3fs", page + 1, self.page_ammount + 1, length, seconds)
+  self:update_winbar()
   -- set focus if window exists
   self:focus_result_window()
 
@@ -359,9 +405,13 @@ function ResultUI:get_actions()
     end,
 
     cancel_call = function()
-      if self.current_call then
-        self.handler:call_cancel(self.current_call.id)
+      local call = self.refresh_call or self.current_call
+      if call then
+        self.handler:call_cancel(call.id)
       end
+    end,
+    refresh = function()
+      self:refresh()
     end,
   }
 end
@@ -379,14 +429,52 @@ end
 -- sets call's result to Result's buffer
 ---@param call CallDetails
 function ResultUI:set_call(call)
+  self.stop_progress()
+  self.refresh_call = nil
+  self.refresh_progress = nil
+  self:update_winbar()
   if self.header then
     self.header:set(nil)
   end
   self.page_index = 0
   self.page_ammount = 0
   self.current_call = call
+end
 
+--- Run the displayed query again without clearing its result buffer.
+function ResultUI:refresh()
+  local call = self.current_call
+  if
+    not call
+    or self.refresh_call
+    or call.state == "unknown"
+    or call.state == "executing"
+    or call.state == "retrieving"
+  then
+    return
+  end
+  local conn_id = call.connection_id
+  if not conn_id or conn_id == "" then
+    local conn = self.handler:get_current_connection()
+    conn_id = conn and conn.id
+  end
+  if not conn_id then
+    return
+  end
+
+  local ok, refreshed = pcall(self.handler.connection_execute, self.handler, conn_id, call.query)
+  if not ok then
+    vim.notify("DBee: Result refresh failed: " .. tostring(refreshed), vim.log.levels.ERROR)
+    return
+  end
   self.stop_progress()
+  self.refresh_call = refreshed
+  self.stop_progress = progress.start(function(line)
+    self.refresh_progress = line
+    self:update_winbar()
+  end, self.progress_opts)
+  -- A fast query may already have completed before the execute RPC returned.
+  self:on_call_state_changed { call = refreshed }
 end
 
 -- Gets the currently displayed call.

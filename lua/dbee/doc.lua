@@ -52,6 +52,7 @@
 ---Details and stats of a single call to database.
 ---@class CallDetails
 ---@field id call_id
+---@field connection_id? connection_id connection that executed the query
 ---@field time_taken_us integer duration (time period) in microseconds
 ---@field query string
 ---@field state call_state

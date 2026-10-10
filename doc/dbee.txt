@@ -339,6 +339,8 @@ Here are the defaults:
         mappings = {
           -- show all result keybindings in a popup
           { key = "?", mode = "n", action = "show_help" },
+          -- rerun the displayed query while keeping its previous results visible
+          { key = "R", mode = "n", action = "refresh" },
           -- next/previous page
           { key = "L", mode = "", action = "page_next" },
           { key = "H", mode = "", action = "page_prev" },
@@ -567,6 +569,11 @@ Here are a few steps to quickly get started:
   require("dbee").api.ui.result_page_first()     Go to the               F
                                                 first page   
   -------------------------------------------------------------------------------------
+- In the "result" buffer, press `R` to rerun the displayed query on its original
+    connection. A spinner appears in the window bar while the previous results
+    and column names stay visible. When the new results are ready, they replace
+    the old table, starting at the first page. `<C-c>` cancels the refresh. Errors
+    and cancellation keep the previous results visible.
 - In the "result" buffer, press `>` in normal mode to show the current row as JSON
     in a split to the right, 50 columns wide. The new buffer has filetype `json`.
     In visual mode, `>` shows the full value of the column under the cursor;
